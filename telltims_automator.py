@@ -729,11 +729,12 @@ class TellTimsAutomator:
 
             # Page 3: Click Highly Satisfied
             self.log_status("Selecting 'Highly Satisfied'...")
-            self.wait_and_click(By.CSS_SELECTOR, "label[for='QR~QID15~4']")
+            self.click_element_by_id("QR~QID15~4")
             self.click_next()
 
             # Page 4: Enter text "Customer service"
             self.log_status("Entering feedback text...")
+            self.wait_for_page_load()
             textarea = self.wait_for_element(By.ID, "QR~QID45")
             textarea.clear()
             textarea.send_keys("Customer service")
@@ -741,17 +742,17 @@ class TellTimsAutomator:
 
             # Page 5: Select Dine-In
             self.log_status("Selecting 'Dine-In'...")
-            self.wait_and_click(By.CSS_SELECTOR, "label[for='QR~QID18~5']")
+            self.click_element_by_id("QR~QID18~5")
             self.click_next()
 
             # Page 6: Select Front counter
             self.log_status("Selecting 'Front counter'...")
-            self.wait_and_click(By.CSS_SELECTOR, "label[for='QR~QID19~5']")
+            self.click_element_by_id("QR~QID19~5")
             self.click_next()
 
             # Page 7: Select Beverage only
             self.log_status("Selecting 'Beverage only'...")
-            self.wait_and_click(By.CSS_SELECTOR, "label[for='QR~QID20~5']")
+            self.click_element_by_id("QR~QID20~5")
             self.click_next()
 
             # Page 8: Select Highly Satisfied for all 6 rows
