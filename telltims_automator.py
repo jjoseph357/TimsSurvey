@@ -383,7 +383,7 @@ class TellTimsAutomator:
         tk.Label(speed_frame, text="Fast", font=("Helvetica", 8),
                 bg=self.bg_color, fg="#888").pack(side=tk.LEFT)
 
-        self.speed_var = tk.DoubleVar(value=1.0)
+        self.speed_var = tk.DoubleVar(value=0.3)
         speed_slider = ttk.Scale(
             speed_frame,
             from_=0.3,
@@ -664,20 +664,9 @@ class TellTimsAutomator:
     def click_next(self):
         """Click the Next button and wait for next page"""
         delay = self.speed_var.get()
-        time.sleep(delay * 0.3)
-
-        # Get current page state before clicking
-        try:
-            old_url = self.driver.current_url
-        except:
-            old_url = ""
-
         self.wait_and_click(By.ID, "NextButton")
-
-        # Wait for page transition
-        time.sleep(delay * 0.5)
+        time.sleep(delay)
         self.wait_for_page_load()
-        time.sleep(delay * 0.5)
 
     def run_automation(self, survey_code):
         """Main automation logic with specific element selectors"""
@@ -719,11 +708,9 @@ class TellTimsAutomator:
             self.click_next()
             self.log_status("Code submitted")
 
-            # Page 2: Click Yes - wait for page to fully load first
-            self.log_status("Waiting for page to load...")
-            self.wait_for_page_load()
-            time.sleep(1)  # Extra wait for dynamic content
+            # Page 2: Click Yes
             self.log_status("Selecting 'Yes'...")
+            self.wait_for_page_load()
             self.click_element_by_id("QR~QID14~1")
             self.click_next()
 
@@ -810,35 +797,8 @@ class TellTimsAutomator:
             self.click_element_by_id("QR~QID68~2")
             self.click_next()
 
-            # Final page - Extract validation code
-            self.log_status("Survey complete! Looking for validation code...")
-            time.sleep(delay * 2)
-
-            # Try to find validation code on page
-            try:
-                page_source = self.driver.page_source
-                # Look for common validation code patterns
-                code_patterns = [
-                    r'validation\s*code[:\s]*(\w+)',
-                    r'code[:\s]*([A-Z0-9]{6,12})',
-                    r'(\d{4,8})',
-                ]
-
-                for pattern in code_patterns:
-                    matches = re.findall(pattern, page_source, re.IGNORECASE)
-                    if matches:
-                        self.validation_code = matches[0]
-                        break
-
-                if self.validation_code:
-                    self.log_status(f"VALIDATION CODE: {self.validation_code}")
-                    self.root.after(0, lambda: self.show_validation_code(self.validation_code))
-                else:
-                    self.log_status("Survey completed! Check browser for validation code.")
-
-            except Exception as e:
-                self.log_status(f"Could not extract code: {str(e)}")
-
+            # Final page - Show validation code in browser
+            self.log_status("Survey complete! Validation code displayed in browser.")
             self.log_status("Automation completed successfully!")
 
         except TimeoutException as e:
@@ -847,13 +807,6 @@ class TellTimsAutomator:
             self.log_status(f"Error: {str(e)}")
         finally:
             self.is_running = False
-
-    def show_validation_code(self, code):
-        """Show validation code in a popup"""
-        messagebox.showinfo(
-            "Survey Complete!",
-            f"Your validation code is:\n\n{code}\n\nSave this code for your free item!"
-        )
 
 
 def main():

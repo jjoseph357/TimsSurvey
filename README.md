@@ -54,11 +54,37 @@ python telltims_automator.py
 ### Recommended Free Hosting Platforms
 
 #### 1. Replit (Easiest - Recommended)
-- Go to [replit.com](https://replit.com)
-- Create a Python repl
-- Upload your files
-- Add `flask` to requirements for web interface
-- Free tier includes always-on repls
+
+**Setup Steps:**
+1. Go to [replit.com](https://replit.com) and create account
+2. Click "Create Repl" → Select "Python"
+3. Upload your files (`telltims_automator.py`, `requirements.txt`)
+4. Create a `replit.nix` file with this content:
+
+```nix
+{ pkgs }: {
+  deps = [
+    pkgs.python310
+    pkgs.tesseract
+    pkgs.chromium
+    pkgs.chromedriver
+  ];
+}
+```
+
+5. Update `requirements.txt` to include:
+```
+selenium>=4.0.0
+Pillow>=9.0.0
+pytesseract>=0.3.10
+opencv-python-headless>=4.5.0
+flask>=2.0.0
+```
+
+6. For web interface, create `main.py` (see Converting to Web App section)
+7. Click "Run"
+
+**Note:** For the desktop GUI version, Replit works best with their "Desktop" template or using VNC
 
 #### 2. Render
 - [render.com](https://render.com)
