@@ -92,7 +92,7 @@ class CameraWindow(tk.Toplevel):
     def __init__(self, parent, callback):
         super().__init__(parent)
         self.title("Camera Capture")
-        self.geometry("700x580")
+        self.geometry("700x620")
         self.resizable(False, False)
         self.callback = callback
         self.captured_image = None
@@ -112,22 +112,36 @@ class CameraWindow(tk.Toplevel):
                 fg="white", bg=self.primary_color).pack(pady=15)
 
         # Video frame
-        self.video_label = tk.Label(self, bg="#000000")
+        self.video_label = tk.Label(self, bg="#000000", width=640, height=480)
         self.video_label.pack(pady=20, padx=20)
 
-        # Buttons
+        # Buttons - using standard tk.Button for reliability
         btn_frame = tk.Frame(self, bg=self.bg_color)
         btn_frame.pack(pady=10)
 
-        self.capture_btn = ModernButton(btn_frame, text="Capture", command=self.capture_image, width=150)
+        # Style for buttons
+        style = ttk.Style()
+        style.configure("Capture.TButton", font=("Helvetica", 11, "bold"))
+
+        self.capture_btn = tk.Button(
+            btn_frame, text="CAPTURE", command=self.capture_image,
+            bg=self.primary_color, fg="white", font=("Helvetica", 11, "bold"),
+            width=12, height=2, relief=tk.RAISED, cursor="hand2"
+        )
         self.capture_btn.pack(side=tk.LEFT, padx=10)
 
-        self.use_btn = ModernButton(btn_frame, text="Use Image", command=self.use_image,
-                                   bg_color="#4a2c2a", hover_color="#3a1c1a", width=150)
+        self.use_btn = tk.Button(
+            btn_frame, text="USE IMAGE", command=self.use_image,
+            bg="#4a2c2a", fg="white", font=("Helvetica", 11, "bold"),
+            width=12, height=2, relief=tk.RAISED, cursor="hand2"
+        )
         self.use_btn.pack(side=tk.LEFT, padx=10)
 
-        cancel_btn = ModernButton(btn_frame, text="Cancel", command=self.cancel,
-                                 bg_color="#666666", hover_color="#444444", width=100)
+        cancel_btn = tk.Button(
+            btn_frame, text="CANCEL", command=self.cancel,
+            bg="#666666", fg="white", font=("Helvetica", 11, "bold"),
+            width=10, height=2, relief=tk.RAISED, cursor="hand2"
+        )
         cancel_btn.pack(side=tk.LEFT, padx=10)
 
         # Instructions
@@ -593,26 +607,61 @@ class TellTimsAutomator:
 
         self.log_status("Automation stopped.")
 
-    def wait_and_click(self, by, value, timeout=10):
-        """Wait for element and click it"""
+    def wait_and_click(self, by, value, timeout=15):
+        """Wait for element to be visible and clickable, then click it"""
+        # First wait for element to be present
+        WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_element_located((by, value))
+        )
+        # Then wait for it to be visible
+        WebDriverWait(self.driver, timeout).until(
+            EC.visibility_of_element_located((by, value))
+        )
+        # Finally wait for it to be clickable
         element = WebDriverWait(self.driver, timeout).until(
             EC.element_to_be_clickable((by, value))
         )
+        # Scroll element into view
+        self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+        time.sleep(0.3)
         element.click()
         return element
 
-    def wait_for_element(self, by, value, timeout=10):
-        """Wait for element to be present"""
-        return WebDriverWait(self.driver, timeout).until(
+    def wait_for_element(self, by, value, timeout=15):
+        """Wait for element to be present and visible"""
+        WebDriverWait(self.driver, timeout).until(
             EC.presence_of_element_located((by, value))
         )
+        return WebDriverWait(self.driver, timeout).until(
+            EC.visibility_of_element_located((by, value))
+        )
+
+    def wait_for_page_load(self):
+        """Wait for page to fully load"""
+        # Wait for document ready state
+        WebDriverWait(self.driver, 15).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        # Small additional delay for dynamic content
+        time.sleep(0.5)
 
     def click_next(self):
-        """Click the Next button"""
+        """Click the Next button and wait for next page"""
         delay = self.speed_var.get()
-        time.sleep(delay * 0.5)
+        time.sleep(delay * 0.3)
+
+        # Get current page state before clicking
+        try:
+            old_url = self.driver.current_url
+        except:
+            old_url = ""
+
         self.wait_and_click(By.ID, "NextButton")
-        time.sleep(delay)
+
+        # Wait for page transition
+        time.sleep(delay * 0.5)
+        self.wait_for_page_load()
+        time.sleep(delay * 0.5)
 
     def run_automation(self, survey_code):
         """Main automation logic with specific element selectors"""
@@ -647,13 +696,17 @@ class TellTimsAutomator:
 
             # Page 1: Enter survey code
             self.log_status(f"Entering survey code: {survey_code}")
+            self.wait_for_page_load()
             code_input = self.wait_for_element(By.ID, "QR~QID9")
             code_input.clear()
             code_input.send_keys(survey_code)
             self.click_next()
             self.log_status("Code submitted")
 
-            # Page 2: Click Yes
+            # Page 2: Click Yes - wait for page to fully load first
+            self.log_status("Waiting for page to load...")
+            self.wait_for_page_load()
+            time.sleep(1)  # Extra wait for dynamic content
             self.log_status("Selecting 'Yes'...")
             self.wait_and_click(By.ID, "QR~QID14~1")
             self.click_next()

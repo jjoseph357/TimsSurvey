@@ -47,45 +47,93 @@ python telltims_automator.py
 4. The browser will navigate through all survey questions automatically
 5. Your validation code will be displayed upon completion
 
-## Mobile Packaging Options
+## Free Hosting Options
 
-To run this app on mobile devices, consider these approaches:
+**Note: GitHub Pages will NOT work** - it only hosts static files and cannot run Python/Selenium.
 
-### Option 1: Web-Based Version (Recommended for Mobile)
-Convert to a Flask/Django web app that mobile users can access via browser:
-- Host on a server (Heroku, AWS, etc.)
-- Users access via mobile browser
-- Camera capture uses HTML5 `<input type="file" capture="camera">`
+### Recommended Free Hosting Platforms
 
-### Option 2: Kivy (Cross-platform Mobile App)
+#### 1. Replit (Easiest - Recommended)
+- Go to [replit.com](https://replit.com)
+- Create a Python repl
+- Upload your files
+- Add `flask` to requirements for web interface
+- Free tier includes always-on repls
+
+#### 2. Render
+- [render.com](https://render.com)
+- Free web service tier
+- Supports Python with Chrome/Selenium
+- Add to `render.yaml`:
+```yaml
+services:
+  - type: web
+    name: telltims-automator
+    env: python
+    buildCommand: pip install -r requirements.txt && apt-get install -y chromium-browser
+    startCommand: python app.py
+```
+
+#### 3. Railway
+- [railway.app](https://railway.app)
+- $5 free credit monthly
+- Easy GitHub deployment
+- Supports background workers
+
+#### 4. PythonAnywhere
+- [pythonanywhere.com](https://pythonanywhere.com)
+- Free tier available
+- Note: Selenium requires paid tier for external URLs
+
+#### 5. Google Cloud Run (Free Tier)
+- 2 million requests/month free
+- Requires Dockerfile with Chrome
+
+### Converting to Web App
+
+To host on these platforms, convert to Flask:
+
+```python
+from flask import Flask, render_template, request, jsonify
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/run-survey', methods=['POST'])
+def run_survey():
+    code = request.json['code']
+    # Run automation here
+    return jsonify({'status': 'complete', 'validation_code': '...'})
+```
+
+### Mobile Access
+
+Once hosted, mobile users can:
+1. Visit your hosted URL in their browser
+2. Use HTML5 camera input: `<input type="file" accept="image/*" capture="camera">`
+3. Submit code and view results
+
+## Mobile App Packaging
+
+### Option 1: Kivy (Cross-platform Mobile App)
 ```bash
 pip install kivy buildozer
 ```
 - Rewrite GUI using Kivy framework
 - Use `buildozer` to package for Android
-- Use `kivy-ios` for iOS builds
 
-### Option 3: BeeWare (Native Mobile Apps)
+### Option 2: BeeWare (Native Mobile Apps)
 ```bash
 pip install briefcase
 ```
 - Rewrite using Toga GUI toolkit
 - Package with Briefcase for iOS/Android
 
-### Option 4: PyQt + PyQtDeploy
-- Rewrite GUI in PyQt5/6
-- Use pyqtdeploy for mobile packaging
-
-### Option 5: Remote Access
-- Run the desktop app on a server
-- Access via remote desktop (VNC, TeamViewer)
-- Or expose via web interface using PyWebIO
-
 ### Note on Mobile Limitations
 - Selenium requires a desktop browser environment
-- Mobile packaging typically requires:
-  - A web-based approach (server runs automation, mobile is just UI)
-  - Or using Appium for native mobile browser automation
+- Mobile apps need server-side automation (client-server architecture)
 
 ## Survey Flow
 
