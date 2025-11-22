@@ -607,6 +607,22 @@ class TellTimsAutomator:
 
         self.log_status("Automation stopped.")
 
+    def click_element_by_id(self, element_id, timeout=15):
+        """Click element by ID using JavaScript (handles special characters in IDs)"""
+        # Wait for element to be present
+        WebDriverWait(self.driver, timeout).until(
+            lambda d: d.execute_script(f"return document.getElementById('{element_id}') !== null")
+        )
+        # Click using JavaScript
+        self.driver.execute_script(f"""
+            var element = document.getElementById('{element_id}');
+            if (element) {{
+                element.scrollIntoView(true);
+                element.click();
+            }}
+        """)
+        time.sleep(0.3)
+
     def wait_and_click(self, by, value, timeout=15):
         """Wait for element to be visible and clickable, then click it"""
         # First wait for element to be present
@@ -708,7 +724,7 @@ class TellTimsAutomator:
             self.wait_for_page_load()
             time.sleep(1)  # Extra wait for dynamic content
             self.log_status("Selecting 'Yes'...")
-            self.wait_and_click(By.ID, "QR~QID14~1")
+            self.click_element_by_id("QR~QID14~1")
             self.click_next()
 
             # Page 3: Click Highly Satisfied
@@ -746,10 +762,10 @@ class TellTimsAutomator:
             ]
             for radio_id in satisfaction_ids:
                 try:
-                    self.wait_and_click(By.ID, radio_id, timeout=5)
+                    self.click_element_by_id(radio_id)
                     time.sleep(delay * 0.2)
-                except:
-                    self.log_status(f"Could not find {radio_id}")
+                except Exception as e:
+                    self.log_status(f"Could not find {radio_id}: {e}")
             self.click_next()
 
             # Page 9: Click Next (empty page)
@@ -758,39 +774,39 @@ class TellTimsAutomator:
 
             # Page 10: Select No
             self.log_status("Selecting 'No'...")
-            self.wait_and_click(By.ID, "QR~QID151~3")
+            self.click_element_by_id("QR~QID151~3")
             self.click_next()
 
             # Page 11: Select Highly Likely for both rows
             self.log_status("Selecting 'Highly Likely'...")
-            self.wait_and_click(By.ID, "QR~QID44~1~1")
+            self.click_element_by_id("QR~QID44~1~1")
             time.sleep(delay * 0.3)
-            self.wait_and_click(By.ID, "QR~QID44~3~1")
+            self.click_element_by_id("QR~QID44~3~1")
             self.click_next()
 
             # Page 12: Select No (QID37)
             self.log_status("Selecting 'No'...")
-            self.wait_and_click(By.ID, "QR~QID37~2")
+            self.click_element_by_id("QR~QID37~2")
             self.click_next()
 
             # Page 13: Select No (QID134)
             self.log_status("Selecting 'No'...")
-            self.wait_and_click(By.ID, "QR~QID134~2")
+            self.click_element_by_id("QR~QID134~2")
             self.click_next()
 
             # Page 14: Select Yes (QID150)
             self.log_status("Selecting 'Yes'...")
-            self.wait_and_click(By.ID, "QR~QID150~2")
+            self.click_element_by_id("QR~QID150~2")
             self.click_next()
 
             # Page 15: Select "Something else" checkbox
             self.log_status("Selecting 'Something else'...")
-            self.wait_and_click(By.ID, "QR~QID48~5")
+            self.click_element_by_id("QR~QID48~5")
             self.click_next()
 
             # Page 16: Select No (QID68)
             self.log_status("Selecting 'No'...")
-            self.wait_and_click(By.ID, "QR~QID68~2")
+            self.click_element_by_id("QR~QID68~2")
             self.click_next()
 
             # Final page - Extract validation code
