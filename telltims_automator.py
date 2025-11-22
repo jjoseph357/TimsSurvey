@@ -2,7 +2,7 @@
 """
 TellTims Survey Automator
 A visually appealing GUI application to automatically navigate through the TellTims survey.
-Supports manual code entry and OCR from images.
+Supports manual code entry, image upload OCR, and camera capture.
 """
 
 import tkinter as tk
@@ -12,6 +12,7 @@ import threading
 import time
 import re
 import os
+import tempfile
 
 # Optional imports with graceful fallback
 try:
@@ -21,6 +22,12 @@ except ImportError:
     OCR_AVAILABLE = False
 
 try:
+    import cv2
+    CAMERA_AVAILABLE = True
+except ImportError:
+    CAMERA_AVAILABLE = False
+
+try:
     from selenium import webdriver
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.common.by import By
@@ -28,6 +35,7 @@ try:
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
+    from selenium.common.exceptions import TimeoutException, NoSuchElementException
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
@@ -57,7 +65,6 @@ class ModernButton(tk.Canvas):
 
     def draw_button(self, color):
         self.delete("all")
-        # Draw rounded rectangle
         radius = 10
         self.create_arc(0, 0, radius*2, radius*2, start=90, extent=90, fill=color, outline=color)
         self.create_arc(self.width-radius*2, 0, self.width, radius*2, start=0, extent=90, fill=color, outline=color)
@@ -65,7 +72,6 @@ class ModernButton(tk.Canvas):
         self.create_arc(self.width-radius*2, self.height-radius*2, self.width, self.height, start=270, extent=90, fill=color, outline=color)
         self.create_rectangle(radius, 0, self.width-radius, self.height, fill=color, outline=color)
         self.create_rectangle(0, radius, self.width, self.height-radius, fill=color, outline=color)
-        # Draw text
         self.create_text(self.width//2, self.height//2, text=self.text,
                         fill=self.text_color, font=("Helvetica", 12, "bold"))
 
@@ -80,25 +86,155 @@ class ModernButton(tk.Canvas):
             self.command()
 
 
+class CameraWindow(tk.Toplevel):
+    """Camera capture window"""
+
+    def __init__(self, parent, callback):
+        super().__init__(parent)
+        self.title("Camera Capture")
+        self.geometry("700x580")
+        self.resizable(False, False)
+        self.callback = callback
+        self.captured_image = None
+
+        # Colors
+        self.bg_color = "#f5f5f5"
+        self.primary_color = "#c8102e"
+
+        self.configure(bg=self.bg_color)
+
+        # Header
+        header = tk.Frame(self, bg=self.primary_color, height=60)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+
+        tk.Label(header, text="Capture Receipt", font=("Helvetica", 18, "bold"),
+                fg="white", bg=self.primary_color).pack(pady=15)
+
+        # Video frame
+        self.video_label = tk.Label(self, bg="#000000")
+        self.video_label.pack(pady=20, padx=20)
+
+        # Buttons
+        btn_frame = tk.Frame(self, bg=self.bg_color)
+        btn_frame.pack(pady=10)
+
+        self.capture_btn = ModernButton(btn_frame, text="Capture", command=self.capture_image, width=150)
+        self.capture_btn.pack(side=tk.LEFT, padx=10)
+
+        self.use_btn = ModernButton(btn_frame, text="Use Image", command=self.use_image,
+                                   bg_color="#4a2c2a", hover_color="#3a1c1a", width=150)
+        self.use_btn.pack(side=tk.LEFT, padx=10)
+
+        cancel_btn = ModernButton(btn_frame, text="Cancel", command=self.cancel,
+                                 bg_color="#666666", hover_color="#444444", width=100)
+        cancel_btn.pack(side=tk.LEFT, padx=10)
+
+        # Instructions
+        tk.Label(self, text="Position the receipt code in view and click Capture",
+                font=("Helvetica", 9), fg="#666666", bg=self.bg_color).pack(pady=5)
+
+        # Initialize camera
+        self.cap = None
+        self.is_running = True
+        self.start_camera()
+
+        # Handle window close
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+    def start_camera(self):
+        """Start camera feed"""
+        if not CAMERA_AVAILABLE:
+            messagebox.showerror("Error", "OpenCV not available. Install with: pip install opencv-python")
+            self.destroy()
+            return
+
+        self.cap = cv2.VideoCapture(0)
+        if not self.cap.isOpened():
+            messagebox.showerror("Error", "Could not open camera")
+            self.destroy()
+            return
+
+        self.update_frame()
+
+    def update_frame(self):
+        """Update camera frame"""
+        if self.is_running and self.cap and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret:
+                # Convert to RGB for tkinter
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame_rgb = cv2.resize(frame_rgb, (640, 480))
+
+                # Convert to PhotoImage
+                img = Image.fromarray(frame_rgb)
+                imgtk = ImageTk.PhotoImage(image=img)
+
+                self.video_label.imgtk = imgtk
+                self.video_label.configure(image=imgtk)
+
+                self.current_frame = frame
+
+            self.after(30, self.update_frame)
+
+    def capture_image(self):
+        """Capture current frame"""
+        if hasattr(self, 'current_frame'):
+            self.captured_image = self.current_frame.copy()
+
+            # Show captured image instead of live feed
+            frame_rgb = cv2.cvtColor(self.captured_image, cv2.COLOR_BGR2RGB)
+            frame_rgb = cv2.resize(frame_rgb, (640, 480))
+            img = Image.fromarray(frame_rgb)
+            imgtk = ImageTk.PhotoImage(image=img)
+            self.video_label.imgtk = imgtk
+            self.video_label.configure(image=imgtk)
+
+    def use_image(self):
+        """Use captured image for OCR"""
+        if self.captured_image is not None:
+            # Save to temp file
+            temp_path = tempfile.mktemp(suffix='.png')
+            cv2.imwrite(temp_path, self.captured_image)
+
+            self.cleanup()
+            self.callback(temp_path)
+            self.destroy()
+        else:
+            messagebox.showwarning("No Image", "Please capture an image first")
+
+    def cancel(self):
+        """Cancel and close window"""
+        self.cleanup()
+        self.destroy()
+
+    def cleanup(self):
+        """Clean up resources"""
+        self.is_running = False
+        if self.cap:
+            self.cap.release()
+
+
 class TellTimsAutomator:
     """Main application class for TellTims Survey Automator"""
 
     def __init__(self, root):
         self.root = root
         self.root.title("TellTims Survey Automator")
-        self.root.geometry("600x700")
+        self.root.geometry("600x750")
         self.root.resizable(False, False)
 
         # Colors - Tim Hortons theme
         self.bg_color = "#f5f5f5"
-        self.primary_color = "#c8102e"  # Tim Hortons red
-        self.secondary_color = "#4a2c2a"  # Dark brown
+        self.primary_color = "#c8102e"
+        self.secondary_color = "#4a2c2a"
         self.accent_color = "#ffffff"
 
         self.root.configure(bg=self.bg_color)
 
         self.driver = None
         self.is_running = False
+        self.validation_code = None
 
         self.setup_ui()
 
@@ -163,32 +299,52 @@ class TellTimsAutomator:
         )
         or_label.pack(pady=5)
 
-        # Image upload button
+        # Image buttons frame
+        img_btn_frame = tk.Frame(code_section, bg=self.bg_color)
+        img_btn_frame.pack(pady=10)
+
+        # Camera button
+        camera_btn = ModernButton(
+            img_btn_frame,
+            text="Take Photo",
+            command=self.open_camera,
+            bg_color="#4a2c2a",
+            hover_color="#3a1c1a",
+            width=120
+        )
+        camera_btn.pack(side=tk.LEFT, padx=5)
+
+        # Upload button
         upload_btn = ModernButton(
-            code_section,
-            text="Upload Receipt Image",
+            img_btn_frame,
+            text="Upload Image",
             command=self.upload_image,
             bg_color="#4a2c2a",
             hover_color="#3a1c1a",
-            width=250
+            width=120
         )
-        upload_btn.pack(pady=10)
+        upload_btn.pack(side=tk.LEFT, padx=5)
 
-        # OCR status
+        # Dependency status
+        status_text = []
         if not OCR_AVAILABLE:
-            ocr_warning = tk.Label(
+            status_text.append("OCR: pytesseract")
+        if not CAMERA_AVAILABLE:
+            status_text.append("Camera: opencv-python")
+        if status_text:
+            dep_warning = tk.Label(
                 code_section,
-                text="(OCR not available - install pytesseract)",
+                text=f"Missing: {', '.join(status_text)}",
                 font=("Helvetica", 8),
                 fg="#ff6b6b",
                 bg=self.bg_color
             )
-            ocr_warning.pack()
+            dep_warning.pack()
 
         # Settings section
         settings_section = tk.LabelFrame(
             content_frame,
-            text=" Automation Settings ",
+            text=" Settings ",
             font=("Helvetica", 12, "bold"),
             fg=self.secondary_color,
             bg=self.bg_color,
@@ -213,11 +369,11 @@ class TellTimsAutomator:
         tk.Label(speed_frame, text="Fast", font=("Helvetica", 8),
                 bg=self.bg_color, fg="#888").pack(side=tk.LEFT)
 
-        self.speed_var = tk.DoubleVar(value=0.5)
+        self.speed_var = tk.DoubleVar(value=1.0)
         speed_slider = ttk.Scale(
             speed_frame,
-            from_=0.1,
-            to=2.0,
+            from_=0.3,
+            to=3.0,
             variable=self.speed_var,
             orient=tk.HORIZONTAL
         )
@@ -225,19 +381,6 @@ class TellTimsAutomator:
 
         tk.Label(speed_frame, text="Slow", font=("Helvetica", 8),
                 bg=self.bg_color, fg="#888").pack(side=tk.LEFT)
-
-        # Auto-answer option
-        self.auto_answer_var = tk.BooleanVar(value=True)
-        auto_check = tk.Checkbutton(
-            settings_section,
-            text="Auto-select first option for each question",
-            variable=self.auto_answer_var,
-            font=("Helvetica", 10),
-            bg=self.bg_color,
-            fg=self.secondary_color,
-            activebackground=self.bg_color
-        )
-        auto_check.pack(anchor=tk.W, pady=5)
 
         # Headless mode option
         self.headless_var = tk.BooleanVar(value=False)
@@ -254,7 +397,7 @@ class TellTimsAutomator:
 
         # Control buttons
         button_frame = tk.Frame(content_frame, bg=self.bg_color)
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=15)
 
         start_btn = ModernButton(
             button_frame,
@@ -297,7 +440,6 @@ class TellTimsAutomator:
         )
         self.status_text.pack(fill=tk.BOTH, expand=True)
 
-        # Scrollbar for status
         scrollbar = ttk.Scrollbar(self.status_text, command=self.status_text.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.status_text.config(yscrollcommand=scrollbar.set)
@@ -305,14 +447,14 @@ class TellTimsAutomator:
         # Footer
         footer_label = tk.Label(
             self.root,
-            text="Use responsibly. This tool is for educational purposes only.",
+            text="Use responsibly. For educational purposes only.",
             font=("Helvetica", 8),
             fg="#888888",
             bg=self.bg_color
         )
         footer_label.pack(pady=10)
 
-        self.log_status("Ready. Enter survey code or upload image to begin.")
+        self.log_status("Ready. Enter survey code or capture/upload image.")
 
     def log_status(self, message):
         """Log a message to the status text area"""
@@ -323,15 +465,56 @@ class TellTimsAutomator:
         self.status_text.config(state=tk.DISABLED)
         self.root.update()
 
+    def open_camera(self):
+        """Open camera capture window"""
+        if not CAMERA_AVAILABLE:
+            messagebox.showerror(
+                "Camera Not Available",
+                "Please install opencv-python:\n\npip install opencv-python"
+            )
+            return
+
+        if not OCR_AVAILABLE:
+            messagebox.showerror(
+                "OCR Not Available",
+                "Please install pytesseract:\n\npip install pytesseract"
+            )
+            return
+
+        CameraWindow(self.root, self.process_captured_image)
+
+    def process_captured_image(self, image_path):
+        """Process image captured from camera"""
+        self.log_status("Processing captured image...")
+        try:
+            image = Image.open(image_path)
+            text = pytesseract.image_to_string(image)
+
+            # Find survey code
+            code = self.extract_code_from_text(text)
+
+            if code:
+                self.code_entry.delete(0, tk.END)
+                self.code_entry.insert(0, code)
+                self.log_status(f"Found survey code: {code}")
+            else:
+                self.log_status("Could not find survey code in image.")
+                messagebox.showwarning("Code Not Found",
+                    "Could not detect a survey code.\nPlease enter manually.")
+
+            # Clean up temp file
+            if os.path.exists(image_path):
+                os.remove(image_path)
+
+        except Exception as e:
+            self.log_status(f"Error: {str(e)}")
+
     def upload_image(self):
         """Handle image upload for OCR"""
         if not OCR_AVAILABLE:
             messagebox.showerror(
                 "OCR Not Available",
-                "Please install pytesseract and Tesseract OCR:\n\n"
-                "pip install pytesseract\n"
-                "And install Tesseract from:\n"
-                "https://github.com/tesseract-ocr/tesseract"
+                "Please install pytesseract and Tesseract OCR"
             )
             return
 
@@ -344,52 +527,44 @@ class TellTimsAutomator:
         )
 
         if file_path:
-            self.log_status(f"Processing image: {os.path.basename(file_path)}")
+            self.log_status(f"Processing: {os.path.basename(file_path)}")
             try:
-                # Open and process image
                 image = Image.open(file_path)
-
-                # Perform OCR
                 text = pytesseract.image_to_string(image)
-
-                # Try to find survey code pattern (typically numeric)
-                # Common patterns: XXXX-XXXX-XXXX or just numbers
-                patterns = [
-                    r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}\b',  # XXXX-XXXX-XXXX
-                    r'\b\d{12,16}\b',  # Long number
-                    r'\b\d{4,6}\b'  # Short code
-                ]
-
-                code = None
-                for pattern in patterns:
-                    matches = re.findall(pattern, text)
-                    if matches:
-                        code = matches[0].replace('-', '').replace(' ', '')
-                        break
+                code = self.extract_code_from_text(text)
 
                 if code:
                     self.code_entry.delete(0, tk.END)
                     self.code_entry.insert(0, code)
                     self.log_status(f"Found survey code: {code}")
                 else:
-                    self.log_status("Could not find survey code in image.")
-                    messagebox.showwarning(
-                        "Code Not Found",
-                        "Could not detect a survey code in the image.\n"
-                        "Please enter the code manually."
-                    )
+                    self.log_status("Could not find survey code.")
+                    messagebox.showwarning("Code Not Found",
+                        "Could not detect a survey code.\nPlease enter manually.")
 
             except Exception as e:
-                self.log_status(f"Error processing image: {str(e)}")
-                messagebox.showerror("Error", f"Failed to process image:\n{str(e)}")
+                self.log_status(f"Error: {str(e)}")
+
+    def extract_code_from_text(self, text):
+        """Extract survey code from OCR text"""
+        patterns = [
+            r'\b\d{21}\b',  # 21 digit code
+            r'\b\d{18,24}\b',  # Long number
+            r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b',
+            r'\b\d{12,16}\b',
+        ]
+
+        for pattern in patterns:
+            matches = re.findall(pattern, text)
+            if matches:
+                return matches[0].replace('-', '').replace(' ', '')
+        return None
 
     def start_survey(self):
         """Start the survey automation"""
         if not SELENIUM_AVAILABLE:
-            messagebox.showerror(
-                "Selenium Not Available",
-                "Please install selenium:\n\npip install selenium"
-            )
+            messagebox.showerror("Selenium Not Available",
+                "Please install selenium:\n\npip install selenium")
             return
 
         survey_code = self.code_entry.get().strip()
@@ -398,8 +573,8 @@ class TellTimsAutomator:
             return
 
         self.is_running = True
+        self.validation_code = None
 
-        # Run automation in separate thread
         thread = threading.Thread(target=self.run_automation, args=(survey_code,))
         thread.daemon = True
         thread.start()
@@ -418,12 +593,32 @@ class TellTimsAutomator:
 
         self.log_status("Automation stopped.")
 
+    def wait_and_click(self, by, value, timeout=10):
+        """Wait for element and click it"""
+        element = WebDriverWait(self.driver, timeout).until(
+            EC.element_to_be_clickable((by, value))
+        )
+        element.click()
+        return element
+
+    def wait_for_element(self, by, value, timeout=10):
+        """Wait for element to be present"""
+        return WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_element_located((by, value))
+        )
+
+    def click_next(self):
+        """Click the Next button"""
+        delay = self.speed_var.get()
+        time.sleep(delay * 0.5)
+        self.wait_and_click(By.ID, "NextButton")
+        time.sleep(delay)
+
     def run_automation(self, survey_code):
-        """Main automation logic"""
+        """Main automation logic with specific element selectors"""
         try:
             self.log_status("Initializing browser...")
 
-            # Setup Chrome options
             options = Options()
             if self.headless_var.get():
                 options.add_argument("--headless")
@@ -431,148 +626,171 @@ class TellTimsAutomator:
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--window-size=1920,1080")
 
-            # Initialize driver
             self.driver = webdriver.Chrome(options=options)
+            delay = self.speed_var.get()
 
             self.log_status("Opening TellTims survey...")
             self.driver.get("https://telltims.ca/")
-
-            # Wait for page to load
             time.sleep(3)
 
-            # Switch to iframe if present
+            # Switch to iframe
             try:
                 iframe = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.TAG_NAME, "iframe"))
                 )
                 self.driver.switch_to.frame(iframe)
                 self.log_status("Switched to survey iframe")
-            except Exception as e:
-                self.log_status("No iframe found, continuing on main page")
+            except:
+                self.log_status("No iframe found")
 
-            # Wait for survey to load
             time.sleep(2)
 
-            # Enter survey code
+            # Page 1: Enter survey code
             self.log_status(f"Entering survey code: {survey_code}")
-            self.enter_survey_code(survey_code)
+            code_input = self.wait_for_element(By.ID, "QR~QID9")
+            code_input.clear()
+            code_input.send_keys(survey_code)
+            self.click_next()
+            self.log_status("Code submitted")
 
-            # Navigate through survey
-            self.navigate_survey()
+            # Page 2: Click Yes
+            self.log_status("Selecting 'Yes'...")
+            self.wait_and_click(By.ID, "QR~QID14~1")
+            self.click_next()
 
-            self.log_status("Survey automation completed!")
+            # Page 3: Click Highly Satisfied
+            self.log_status("Selecting 'Highly Satisfied'...")
+            self.wait_and_click(By.CSS_SELECTOR, "label[for='QR~QID15~4']")
+            self.click_next()
 
+            # Page 4: Enter text "Customer service"
+            self.log_status("Entering feedback text...")
+            textarea = self.wait_for_element(By.ID, "QR~QID45")
+            textarea.clear()
+            textarea.send_keys("Customer service")
+            self.click_next()
+
+            # Page 5: Select Dine-In
+            self.log_status("Selecting 'Dine-In'...")
+            self.wait_and_click(By.CSS_SELECTOR, "label[for='QR~QID18~5']")
+            self.click_next()
+
+            # Page 6: Select Front counter
+            self.log_status("Selecting 'Front counter'...")
+            self.wait_and_click(By.CSS_SELECTOR, "label[for='QR~QID19~5']")
+            self.click_next()
+
+            # Page 7: Select Beverage only
+            self.log_status("Selecting 'Beverage only'...")
+            self.wait_and_click(By.CSS_SELECTOR, "label[for='QR~QID20~5']")
+            self.click_next()
+
+            # Page 8: Select Highly Satisfied for all 6 rows
+            self.log_status("Rating all items 'Highly Satisfied'...")
+            satisfaction_ids = [
+                "QR~QID23~4~1", "QR~QID23~6~1", "QR~QID23~7~1",
+                "QR~QID23~8~1", "QR~QID23~10~1", "QR~QID23~11~1"
+            ]
+            for radio_id in satisfaction_ids:
+                try:
+                    self.wait_and_click(By.ID, radio_id, timeout=5)
+                    time.sleep(delay * 0.2)
+                except:
+                    self.log_status(f"Could not find {radio_id}")
+            self.click_next()
+
+            # Page 9: Click Next (empty page)
+            self.log_status("Proceeding...")
+            self.click_next()
+
+            # Page 10: Select No
+            self.log_status("Selecting 'No'...")
+            self.wait_and_click(By.ID, "QR~QID151~3")
+            self.click_next()
+
+            # Page 11: Select Highly Likely for both rows
+            self.log_status("Selecting 'Highly Likely'...")
+            self.wait_and_click(By.ID, "QR~QID44~1~1")
+            time.sleep(delay * 0.3)
+            self.wait_and_click(By.ID, "QR~QID44~3~1")
+            self.click_next()
+
+            # Page 12: Select No (QID37)
+            self.log_status("Selecting 'No'...")
+            self.wait_and_click(By.ID, "QR~QID37~2")
+            self.click_next()
+
+            # Page 13: Select No (QID134)
+            self.log_status("Selecting 'No'...")
+            self.wait_and_click(By.ID, "QR~QID134~2")
+            self.click_next()
+
+            # Page 14: Select Yes (QID150)
+            self.log_status("Selecting 'Yes'...")
+            self.wait_and_click(By.ID, "QR~QID150~2")
+            self.click_next()
+
+            # Page 15: Select "Something else" checkbox
+            self.log_status("Selecting 'Something else'...")
+            self.wait_and_click(By.ID, "QR~QID48~5")
+            self.click_next()
+
+            # Page 16: Select No (QID68)
+            self.log_status("Selecting 'No'...")
+            self.wait_and_click(By.ID, "QR~QID68~2")
+            self.click_next()
+
+            # Final page - Extract validation code
+            self.log_status("Survey complete! Looking for validation code...")
+            time.sleep(delay * 2)
+
+            # Try to find validation code on page
+            try:
+                page_source = self.driver.page_source
+                # Look for common validation code patterns
+                code_patterns = [
+                    r'validation\s*code[:\s]*(\w+)',
+                    r'code[:\s]*([A-Z0-9]{6,12})',
+                    r'(\d{4,8})',
+                ]
+
+                for pattern in code_patterns:
+                    matches = re.findall(pattern, page_source, re.IGNORECASE)
+                    if matches:
+                        self.validation_code = matches[0]
+                        break
+
+                if self.validation_code:
+                    self.log_status(f"VALIDATION CODE: {self.validation_code}")
+                    self.root.after(0, lambda: self.show_validation_code(self.validation_code))
+                else:
+                    self.log_status("Survey completed! Check browser for validation code.")
+
+            except Exception as e:
+                self.log_status(f"Could not extract code: {str(e)}")
+
+            self.log_status("Automation completed successfully!")
+
+        except TimeoutException as e:
+            self.log_status(f"Timeout waiting for element: {str(e)}")
         except Exception as e:
             self.log_status(f"Error: {str(e)}")
         finally:
-            if self.driver and not self.is_running:
-                try:
-                    self.driver.quit()
-                except:
-                    pass
+            self.is_running = False
 
-    def enter_survey_code(self, code):
-        """Enter the survey code into the form"""
-        delay = self.speed_var.get()
-
-        # Try to find input field
-        try:
-            # Use Tab to navigate to first input
-            body = self.driver.find_element(By.TAG_NAME, "body")
-
-            # Tab to the code input field
-            for _ in range(5):  # Tab a few times to reach input
-                body.send_keys(Keys.TAB)
-                time.sleep(delay * 0.3)
-
-            # Enter the code
-            active = self.driver.switch_to.active_element
-            active.send_keys(code)
-            self.log_status("Code entered")
-
-            time.sleep(delay)
-
-            # Press Tab to move to Next button and Enter to click
-            active.send_keys(Keys.TAB)
-            time.sleep(delay * 0.5)
-
-            active = self.driver.switch_to.active_element
-            active.send_keys(Keys.ENTER)
-            self.log_status("Submitted code")
-
-            time.sleep(delay * 2)
-
-        except Exception as e:
-            self.log_status(f"Error entering code: {str(e)}")
-
-    def navigate_survey(self):
-        """Navigate through survey questions using Tab and Enter"""
-        delay = self.speed_var.get()
-        max_questions = 50  # Safety limit
-        question_count = 0
-
-        while self.is_running and question_count < max_questions:
-            try:
-                time.sleep(delay)
-
-                body = self.driver.find_element(By.TAG_NAME, "body")
-
-                if self.auto_answer_var.get():
-                    # Tab to select first option
-                    for _ in range(3):
-                        body.send_keys(Keys.TAB)
-                        time.sleep(delay * 0.3)
-
-                    # Press Space/Enter to select option
-                    active = self.driver.switch_to.active_element
-                    active.send_keys(Keys.SPACE)
-                    time.sleep(delay * 0.5)
-
-                # Tab to Next button
-                for _ in range(5):
-                    body.send_keys(Keys.TAB)
-                    time.sleep(delay * 0.2)
-
-                # Press Enter to proceed
-                active = self.driver.switch_to.active_element
-                active.send_keys(Keys.ENTER)
-
-                question_count += 1
-                self.log_status(f"Completed question {question_count}")
-
-                time.sleep(delay)
-
-                # Check if survey is complete (look for completion indicators)
-                page_source = self.driver.page_source.lower()
-                if any(phrase in page_source for phrase in [
-                    "thank you", "survey complete", "completed",
-                    "validation code", "coupon code"
-                ]):
-                    self.log_status("Survey appears to be complete!")
-                    break
-
-            except Exception as e:
-                self.log_status(f"Navigation step: {str(e)}")
-                # Continue trying
-                time.sleep(delay)
-
-        self.log_status(f"Navigation finished after {question_count} questions")
+    def show_validation_code(self, code):
+        """Show validation code in a popup"""
+        messagebox.showinfo(
+            "Survey Complete!",
+            f"Your validation code is:\n\n{code}\n\nSave this code for your free item!"
+        )
 
 
 def main():
     """Main entry point"""
     root = tk.Tk()
-
-    # Set app icon (Tim Hortons theme)
-    try:
-        # You could add a custom icon here
-        pass
-    except:
-        pass
-
     app = TellTimsAutomator(root)
 
-    # Handle window close
     def on_closing():
         if app.driver:
             try:
