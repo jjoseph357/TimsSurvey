@@ -1,0 +1,30 @@
+{ pkgs }: {
+  deps = [
+    pkgs.python310
+    pkgs.tesseract
+    pkgs.chromium
+    pkgs.chromedriver
+    pkgs.gtk3
+    pkgs.glib
+    pkgs.nss
+    pkgs.nspr
+    pkgs.atk
+    pkgs.cups
+    pkgs.libdrm
+    pkgs.expat
+    pkgs.libxcb
+    pkgs.libX11
+    pkgs.libXcomposite
+    pkgs.libXdamage
+    pkgs.libXext
+    pkgs.libXfixes
+    pkgs.libXrandr
+    pkgs.mesa
+    pkgs.pango
+    pkgs.cairo
+    pkgs.alsa-lib
+    pkgs.dbus
+    pkgs.at-spi2-atk
+    pkgs.at-spi2-core
+  ];
+}

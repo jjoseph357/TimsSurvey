@@ -26,6 +26,7 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
     from selenium.common.exceptions import TimeoutException
     SELENIUM_AVAILABLE = True
 except ImportError:
@@ -40,6 +41,52 @@ automation_status = {
     'complete': False,
     'error': None
 }
+
+def get_chrome_driver():
+    """Get Chrome driver configured for the current environment"""
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-software-rasterizer")
+
+    # Try to find Chrome/Chromium binary
+    import shutil
+    chrome_paths = [
+        shutil.which('chromium'),
+        shutil.which('chromium-browser'),
+        shutil.which('google-chrome'),
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        os.environ.get('CHROME_BIN', '')
+    ]
+
+    for path in chrome_paths:
+        if path and os.path.exists(path):
+            options.binary_location = path
+            break
+
+    # Try to find chromedriver
+    chromedriver_paths = [
+        shutil.which('chromedriver'),
+        '/usr/bin/chromedriver',
+        os.environ.get('CHROMEDRIVER_PATH', '')
+    ]
+
+    service = None
+    for path in chromedriver_paths:
+        if path and os.path.exists(path):
+            service = Service(executable_path=path)
+            break
+
+    if service:
+        return webdriver.Chrome(service=service, options=options)
+    else:
+        return webdriver.Chrome(options=options)
 
 def log_status(message):
     """Log a status message"""
@@ -101,18 +148,7 @@ def run_survey_automation(survey_code):
 
     try:
         log_status("Initializing browser...")
-
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-
-        # For Render deployment
-        options.binary_location = os.environ.get('CHROME_BIN', '/usr/bin/chromium-browser')
-
-        driver = webdriver.Chrome(options=options)
+        driver = get_chrome_driver()
 
         log_status("Opening TellTims survey...")
         driver.get("https://telltims.ca/")
