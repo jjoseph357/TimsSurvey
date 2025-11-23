@@ -1,12 +1,13 @@
 services:
   - type: web
     name: telltims-automator
-    env: python
+    runtime: python
     buildCommand: |
       pip install -r requirements.txt
+      apt-get update && apt-get install -y chromium chromium-driver tesseract-ocr
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
       - key: CHROME_BIN
-        value: /usr/bin/chromium-browser
+        value: /usr/bin/chromium

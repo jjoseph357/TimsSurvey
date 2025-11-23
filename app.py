@@ -175,6 +175,18 @@ def run_survey_automation(survey_code):
         click_next(driver, delay)
         log_status("Code submitted")
 
+        # Check for invalid code error
+        time.sleep(1)
+        page_source = driver.page_source.lower()
+        if any(phrase in page_source for phrase in [
+            'invalid', 'not valid', 'incorrect',
+            'please enter a valid', 'try again'
+        ]):
+            log_status("ERROR: Invalid survey code. Please check and try again.")
+            automation_status['error'] = "Invalid survey code"
+            automation_status['complete'] = True
+            return
+
         # Page 2: Click Yes
         log_status("Selecting 'Yes'...")
         wait_for_page_load(driver)
