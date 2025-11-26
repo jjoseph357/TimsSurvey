@@ -5,6 +5,7 @@ Flask web application for Render deployment
 """
 
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 import threading
 import time
 import re
@@ -33,13 +34,15 @@ except ImportError:
     SELENIUM_AVAILABLE = False
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for GitHub Pages
 
 # Store automation status
 automation_status = {
     'running': False,
     'messages': [],
     'complete': False,
-    'error': None
+    'error': None,
+    'final_url': None
 }
 
 def get_chrome_driver():
@@ -142,6 +145,7 @@ def run_survey_automation(survey_code):
     automation_status['messages'] = []
     automation_status['complete'] = False
     automation_status['error'] = None
+    automation_status['final_url'] = None
 
     driver = None
     delay = 0.3
@@ -276,21 +280,27 @@ def run_survey_automation(survey_code):
         click_element_by_id(driver, "QR~QID68~2")
         click_next(driver, delay)
 
-        # Extract validation code
+        # Extract validation code and final page
         log_status("Survey complete! Extracting validation code...")
-        time.sleep(1)
+        time.sleep(2)
 
+        # Save current URL and page content
+        automation_status['final_url'] = driver.current_url
         page_source = driver.page_source
+
         # Look for validation code pattern like "CB38847"
         match = re.search(r'Validation Code[:\s]*([A-Z0-9]+)', page_source, re.IGNORECASE)
         if match:
             validation_code = match.group(1)
-            log_status(f"VALIDATION CODE: {validation_code}")
+            log_status(f"✓ VALIDATION CODE: {validation_code}")
         else:
-            log_status("Survey completed! Check page for validation code.")
+            log_status("Survey completed! Validation code should be visible on page.")
 
         automation_status['complete'] = True
-        log_status("Automation completed successfully!")
+        log_status("✓ Automation completed successfully! Final page is ready.")
+
+        # Keep browser open for 60 seconds to allow viewing
+        log_status("Browser will remain open for 60 seconds...")
 
     except TimeoutException as e:
         log_status(f"Timeout: {str(e)}")
@@ -299,6 +309,10 @@ def run_survey_automation(survey_code):
         log_status(f"Error: {str(e)}")
         automation_status['error'] = str(e)
     finally:
+        # Keep browser open briefly if successful
+        if driver and automation_status['complete'] and not automation_status['error']:
+            time.sleep(60)  # Keep open for 60 seconds
+
         if driver:
             driver.quit()
         automation_status['running'] = False
