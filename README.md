@@ -37,15 +37,38 @@ Install Tesseract OCR:
 
 ## Usage
 
+### Option 1: Local Web Interface (Recommended)
+
+This runs the application locally on your computer with a user-friendly web interface. No internet exposure or deployment required.
+
+1.  **Start the App**:
+    ```bash
+    python app.py
+    ```
+2.  **Open in Browser**:
+    *   Open your web browser and go to: `http://localhost:5001`
+3.  **Use the App**:
+    *   **Manual Entry**: Click the "Manual Entry" tab and type your 21-digit code.
+    *   **Upload**: Upload a photo of your receipt.
+    *   **Camera**: Use your webcam to scan a receipt.
+
+### Option 2: Remote Access (Mobile/Ngrok)
+
+If you want to access the app from your phone while it runs on your computer:
+
+1.  **Run the Start Script**:
+    *   Double-click `start_ngrok.bat` (Windows)
+    *   Or run `./start_ngrok.bat` in terminal
+2.  **Scan QR / Visit URL**:
+    *   The script will show a public URL (e.g., `https://xyz.ngrok-free.app`).
+    *   Open this URL on your phone to use the app remotely.
+
+### Option 3: Legacy CLI
+
 ```bash
 python telltims_automator.py
 ```
-
-1. Enter your survey code manually, take a photo, or upload a receipt image
-2. Adjust speed settings as needed
-3. Click "Start Survey"
-4. The browser will navigate through all survey questions automatically
-5. Your validation code will be displayed upon completion
+Follow the command-line prompts to enter your code.
 
 ## Free Hosting Options
 
