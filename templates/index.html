@@ -1,418 +1,478 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TellTims Survey Automator</title>
     <style>
         * {
-            box-sizing: border-box;
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
         }
 
         body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            background-color: #f5f5f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
         }
 
         .header {
-            background-color: #c8102e;
+            background: #c8102e;
             color: white;
-            padding: 30px 20px;
+            padding: 25px;
             text-align: center;
         }
 
         .header h1 {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: bold;
         }
 
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
+        .tabs {
+            display: flex;
+            background: #f1f1f1;
+            border-bottom: 1px solid #ddd;
         }
 
-        .card {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-
-        .card h2 {
-            color: #4a2c2a;
-            font-size: 16px;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #f0f0f0;
-        }
-
-        .form-group {
-            margin-bottom: 15px;
-        }
-
-        .form-group label {
-            display: block;
-            color: #4a2c2a;
-            font-size: 14px;
-            margin-bottom: 8px;
-        }
-
-        .form-group input[type="text"] {
-            width: 100%;
-            padding: 12px 15px;
-            font-size: 16px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
+        .tab {
+            flex: 1;
+            padding: 15px;
             text-align: center;
+            cursor: pointer;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
         }
 
-        .form-group input[type="text"]:focus {
+        .tab.active {
+            background: white;
+            color: #c8102e;
+            border-bottom: 3px solid #c8102e;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .code-input-container {
+            margin-bottom: 20px;
+        }
+
+        .code-input {
+            width: 100%;
+            padding: 15px;
+            font-size: 24px;
+            font-family: monospace;
+            text-align: center;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            color: #c8102e;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+
+        .code-input:focus {
             outline: none;
             border-color: #c8102e;
         }
 
-        .separator {
+        .helper-text {
             text-align: center;
-            color: #888;
-            margin: 15px 0;
-            font-size: 12px;
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .btn {
-            flex: 1;
-            padding: 12px 20px;
-            border: none;
-            border-radius: 8px;
+            color: #666;
             font-size: 14px;
+            margin-top: 5px;
+            margin-bottom: 20px;
+        }
+
+        .upload-area {
+            border: 3px dashed #ddd;
+            border-radius: 10px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover {
+            border-color: #c8102e;
+            background: #fff5f7;
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: all 0.3s;
+            margin-bottom: 10px;
         }
 
         .btn-primary {
-            background-color: #c8102e;
+            background: #c8102e;
             color: white;
         }
 
         .btn-primary:hover {
-            background-color: #a00d24;
+            background: #a00d25;
         }
 
         .btn-secondary {
-            background-color: #4a2c2a;
+            background: #4a2c2a;
             color: white;
         }
 
         .btn-secondary:hover {
-            background-color: #3a1c1a;
+            background: #3a1f1d;
         }
 
-        .btn-stop {
-            background-color: #666;
-            color: white;
+        .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            display: none;
         }
 
-        .btn-stop:hover {
-            background-color: #444;
+        .status.active {
+            display: block;
         }
 
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        .status.success {
+            background: #d4edda;
+            color: #155724;
         }
 
-        .btn-full {
-            width: 100%;
-            padding: 15px;
-            font-size: 16px;
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
         }
 
-        .file-input-wrapper {
-            position: relative;
-            overflow: hidden;
-        }
-
-        .file-input-wrapper input[type="file"] {
-            position: absolute;
-            left: 0;
-            top: 0;
-            opacity: 0;
-            width: 100%;
-            height: 100%;
-            cursor: pointer;
-        }
-
-        .status-box {
-            background: #f8f8f8;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
-            max-height: 200px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            color: #4a2c2a;
-        }
-
-        .status-box p {
-            margin: 5px 0;
-        }
-
-        .status-box .success {
-            color: #28a745;
-            font-weight: bold;
-        }
-
-        .status-box .error {
-            color: #dc3545;
-        }
-
-        .footer {
+        .loading {
+            display: none;
             text-align: center;
             padding: 20px;
-            color: #888;
-            font-size: 12px;
         }
 
-        .camera-preview {
-            width: 100%;
-            max-width: 400px;
-            margin: 10px auto;
-            display: none;
+        .loading.active {
+            display: block;
         }
 
-        .camera-preview video {
-            width: 100%;
-            border-radius: 8px;
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #c8102e;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
         }
 
-        .camera-preview canvas {
-            display: none;
-        }
-
-        #cameraControls {
-            display: none;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .warning {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 12px;
-            color: #856404;
-            margin-bottom: 15px;
-        }
-
-        @media (max-width: 480px) {
-            .header h1 {
-                font-size: 22px;
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
             }
-            .btn-group {
-                flex-direction: column;
+
+            100% {
+                transform: rotate(360deg);
             }
+        }
+
+        #result-link:hover img {
+            transform: scale(1.02);
+            border-color: #c8102e;
         }
     </style>
 </head>
+
 <body>
-    <div class="header">
-        <h1>TellTims Survey Automator</h1>
-    </div>
-
     <div class="container">
-        <div class="card">
-            <h2>Survey Code</h2>
-            <div class="form-group">
-                <label for="surveyCode">Enter your survey code:</label>
-                <input type="text" id="surveyCode" placeholder="e.g., 174414701139412150048">
-            </div>
-
-            <div class="separator">— OR —</div>
-
-            <div class="btn-group">
-                <button class="btn btn-secondary file-input-wrapper" id="cameraBtn">
-                    Take Photo
-                    <input type="file" accept="image/*" capture="camera" id="cameraInput">
-                </button>
-                <button class="btn btn-secondary file-input-wrapper">
-                    Upload Image
-                    <input type="file" accept="image/*" id="uploadInput">
-                </button>
-            </div>
-
-            <div class="camera-preview" id="cameraPreview">
-                <video id="video" autoplay playsinline></video>
-                <canvas id="canvas"></canvas>
-            </div>
-
-            <div class="btn-group" id="cameraControls">
-                <button class="btn btn-primary" id="captureBtn">Capture</button>
-                <button class="btn btn-stop" id="cancelCameraBtn">Cancel</button>
-            </div>
-
-            {% if not ocr_available %}
-            <div class="warning">
-                OCR not available. Image upload disabled. Please enter code manually.
-            </div>
-            {% endif %}
+        <div class="header">
+            <h1>TellTims Survey</h1>
         </div>
 
-        <div class="card">
-            <h2>Controls</h2>
-            <div class="btn-group">
-                <button class="btn btn-primary btn-full" id="startBtn">Start Survey</button>
-                <button class="btn btn-stop" id="stopBtn" disabled style="flex: 0.4;">Stop</button>
-            </div>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('scan')">Scan Receipt</div>
+            <div class="tab" onclick="switchTab('manual')">Manual Entry</div>
         </div>
 
-        <div class="card">
-            <h2>Status</h2>
-            <div class="status-box" id="statusBox">
-                <p>Ready. Enter survey code to begin.</p>
+        <div class="content">
+            <div id="scan-tab" class="tab-content active">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📷</div>
+                    <p><strong>Tap to take a photo</strong></p>
+                    <p style="font-size: 14px; color: #666;">or drop an image here</p>
+                </div>
+                <input type="file" id="fileInput" accept="image/*" capture="environment">
             </div>
-        </div>
-    </div>
 
-    <div class="footer">
-        Use responsibly. For educational purposes only.
+            <div id="manual-tab" class="tab-content">
+                <div class="helper-text">Enter the 21-digit code from your receipt</div>
+            </div>
+
+            <div class="code-input-container" id="codeContainer" style="display:none;">
+                <input type="text" id="codeInput" class="code-input" placeholder="0000-0000-0000-0000-00000"
+                    maxlength="26">
+                <div class="helper-text">You can edit the code if needed</div>
+            </div>
+
+            <div id="progress-container" style="display:none; margin-top: 20px;">
+                <div style="background:#eee; border-radius:10px; height:10px; overflow:hidden; margin-bottom:10px;">
+                    <div id="progress-bar" style="width:0%; height:100%; background:#c8102e; transition:width 0.5s;">
+                    </div>
+                </div>
+                <div id="status-text" style="text-align:center; font-weight:bold; margin-bottom:10px;">Starting...</div>
+                <div id="logs-area"
+                    style="background:#f9f9f9; padding:10px; border-radius:5px; height:150px; overflow-y:auto; font-family:monospace; font-size:12px; border:1px solid #eee;">
+                </div>
+            </div>
+
+            <div id="result-container" style="display:none; margin-top: 20px; text-align:center;">
+                <h3 style="color:#155724; margin-bottom:10px;">✓ Survey Complete!</h3>
+                <div id="validation-code" style="font-size:24px; font-weight:bold; color:#c8102e; margin:15px 0;"></div>
+                <p style="color:#666; margin-bottom:10px; font-size:14px;">Click image to open full size</p>
+                <a id="result-link" href="" target="_blank" style="display:inline-block; cursor:pointer;">
+                    <img id="result-image" src=""
+                        style="max-width:100%; max-height:600px; border-radius:10px; border:2px solid #ddd; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: transform 0.2s, border-color 0.2s;">
+                </a>
+                <button class="btn-primary" onclick="location.reload()" style="margin-top:15px;">Start New
+                    Survey</button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing...</p>
+            </div>
+
+            <button class="btn-primary" id="startBtn" style="display:none;">Start Survey</button>
+            <button class="btn-secondary" id="retryBtn" style="display:none;">Scan Again</button>
+
+            <div class="status" id="status"></div>
+        </div>
     </div>
 
     <script>
-        const surveyCodeInput = document.getElementById('surveyCode');
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const codeInput = document.getElementById('codeInput');
+        const codeContainer = document.getElementById('codeContainer');
         const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const statusBox = document.getElementById('statusBox');
-        const cameraInput = document.getElementById('cameraInput');
-        const uploadInput = document.getElementById('uploadInput');
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const cameraPreview = document.getElementById('cameraPreview');
-        const cameraControls = document.getElementById('cameraControls');
-        const captureBtn = document.getElementById('captureBtn');
-        const cancelCameraBtn = document.getElementById('cancelCameraBtn');
+        const retryBtn = document.getElementById('retryBtn');
+        const status = document.getElementById('status');
+        const loading = document.getElementById('loading');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const statusText = document.getElementById('status-text');
+        const logsArea = document.getElementById('logs-area');
+        const resultContainer = document.getElementById('result-container');
+        const resultImage = document.getElementById('result-image');
+        const resultLink = document.getElementById('result-link');
 
-        let statusInterval = null;
-        let stream = null;
+        let currentTab = 'scan';
+        let pollInterval = null;
 
-        // Handle file upload (both camera and file picker)
-        function handleImageUpload(file) {
-            if (!file) return;
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            const tabIndex = tab === 'scan' ? 0 : 1;
+            document.querySelectorAll('.tab')[tabIndex].classList.add('active');
+            document.getElementById(tab + '-tab').classList.add('active');
+
+            status.classList.remove('active');
+            progressContainer.style.display = 'none';
+            resultContainer.style.display = 'none';
+
+            if (tab === 'manual') {
+                codeContainer.style.display = 'block';
+                startBtn.style.display = 'block';
+                retryBtn.style.display = 'none';
+                codeInput.value = '';
+                codeInput.focus();
+            } else {
+                codeContainer.style.display = 'none';
+                startBtn.style.display = 'none';
+                retryBtn.style.display = 'none';
+            }
+        }
+
+        codeInput.addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 21) value = value.slice(0, 21);
+
+            let formatted = '';
+            for (let i = 0; i < value.length; i++) {
+                if (i > 0 && i % 4 === 0 && i < 17) formatted += '-';
+                formatted += value[i];
+            }
+            e.target.value = formatted;
+        });
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) await scanImage(file);
+        });
+
+        async function scanImage(file) {
+            loading.classList.add('active');
+            status.classList.remove('active');
+            codeContainer.style.display = 'none';
+            startBtn.style.display = 'none';
 
             const formData = new FormData();
             formData.append('image', file);
 
-            addStatus('Processing image...');
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    body: formData
+                });
 
-            fetch('/extract-code', {
-                method: 'POST',
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.code) {
-                    surveyCodeInput.value = data.code;
-                    addStatus(`Found survey code: ${data.code}`, 'success');
-                } else if (data.error) {
-                    addStatus(`Error: ${data.error}`, 'error');
+                const data = await response.json();
+
+                if (data.success) {
+                    let code = data.code.replace(/-/g, '');
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                    nativeInputValueSetter.call(codeInput, code);
+                    codeInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+                    codeContainer.style.display = 'block';
+                    startBtn.style.display = 'block';
+                    retryBtn.style.display = 'block';
+                    showStatus('Code detected! Method: ' + data.method, 'success');
+                } else {
+                    showStatus('Could not detect code. Please try again or use Manual Entry.', 'error');
+                    retryBtn.style.display = 'block';
                 }
-            })
-            .catch(err => {
-                addStatus(`Error: ${err.message}`, 'error');
-            });
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+                retryBtn.style.display = 'block';
+            } finally {
+                loading.classList.remove('active');
+            }
         }
 
-        cameraInput.addEventListener('change', (e) => {
-            handleImageUpload(e.target.files[0]);
-        });
+        startBtn.addEventListener('click', async () => {
+            const code = codeInput.value.replace(/-/g, '');
 
-        uploadInput.addEventListener('change', (e) => {
-            handleImageUpload(e.target.files[0]);
-        });
-
-        // Start survey
-        startBtn.addEventListener('click', () => {
-            const code = surveyCodeInput.value.trim();
-            if (!code) {
-                alert('Please enter a survey code');
+            if (code.length < 21) {
+                showStatus('Code must be 21 digits', 'error');
                 return;
             }
 
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
-            statusBox.innerHTML = '';
-            addStatus('Starting survey automation...');
+            codeContainer.style.display = 'none';
+            startBtn.style.display = 'none';
+            retryBtn.style.display = 'none';
+            document.querySelector('.tabs').style.display = 'none';
+            document.querySelector('.content').style.paddingTop = '0';
+            document.getElementById('scan-tab').style.display = 'none';
+            document.getElementById('manual-tab').style.display = 'none';
 
-            fetch('/run-survey', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: code })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) {
-                    addStatus(`Error: ${data.error}`, 'error');
-                    startBtn.disabled = false;
-                    stopBtn.disabled = true;
-                } else {
-                    // Start polling for status
-                    statusInterval = setInterval(checkStatus, 1000);
-                }
-            })
-            .catch(err => {
-                addStatus(`Error: ${err.message}`, 'error');
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-            });
-        });
+            progressContainer.style.display = 'block';
 
-        // Check status
-        function checkStatus() {
-            fetch('/status')
-            .then(res => res.json())
-            .then(data => {
-                // Update status box with all messages
-                statusBox.innerHTML = '';
-                data.messages.forEach(msg => {
-                    const isSuccess = msg.includes('VALIDATION CODE') || msg.includes('completed successfully');
-                    const isError = msg.includes('Error') || msg.includes('Timeout');
-                    addStatus(msg, isSuccess ? 'success' : (isError ? 'error' : ''));
+            try {
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
                 });
 
-                // Check if complete
-                if (!data.running) {
-                    clearInterval(statusInterval);
-                    startBtn.disabled = false;
-                    stopBtn.disabled = true;
-                }
-            });
-        }
+                const data = await response.json();
 
-        // Stop (note: can't actually stop, just disable button)
-        stopBtn.addEventListener('click', () => {
-            addStatus('Stop requested (survey will complete current step)');
+                if (data.success) {
+                    startPolling();
+                } else {
+                    showStatus('Error: ' + data.error, 'error');
+                    progressContainer.style.display = 'none';
+                    startBtn.style.display = 'block';
+                }
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+                progressContainer.style.display = 'none';
+                startBtn.style.display = 'block';
+            }
         });
 
-        // Add status message
-        function addStatus(message, type = '') {
-            const p = document.createElement('p');
-            p.textContent = message;
-            if (type) p.className = type;
-            statusBox.appendChild(p);
-            statusBox.scrollTop = statusBox.scrollHeight;
+        function startPolling() {
+            pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/status');
+                    const data = await response.json();
+
+                    progressBar.style.width = data.progress + '%';
+                    statusText.textContent = data.status;
+
+                    logsArea.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
+                    logsArea.scrollTop = logsArea.scrollHeight;
+
+                    if (data.image) {
+                        clearInterval(pollInterval);
+                        progressContainer.style.display = 'none';
+                        resultContainer.style.display = 'block';
+
+                        const imageSrc = '/api/screenshot/' + data.image + '?t=' + new Date().getTime();
+                        resultImage.src = imageSrc;
+                        resultLink.href = imageSrc;
+
+                        if (data.result_code) {
+                            document.getElementById('validation-code').textContent = 'Validation Code: ' + data.result_code;
+                        }
+                    }
+
+                } catch (e) {
+                    console.error("Polling error", e);
+                }
+            }, 1000);
+        }
+
+        retryBtn.addEventListener('click', () => {
+            fileInput.value = '';
+            codeContainer.style.display = 'none';
+            startBtn.style.display = 'none';
+            retryBtn.style.display = 'none';
+            status.classList.remove('active');
+        });
+
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = 'status active ' + type;
         }
     </script>
 </body>
+
 </html>

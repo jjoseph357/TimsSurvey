@@ -1,398 +1,102 @@
-#!/usr/bin/env python3
-"""
-TellTims Survey Automator - Web Version
-Flask web application for Render deployment
-"""
-
-from flask import Flask, render_template, request, jsonify
-from flask_cors import CORS
-import threading
-import time
-import re
+print("Starting app.py...")
+from flask import Flask, render_template, request, jsonify, send_file
 import os
-import base64
-from io import BytesIO
+from werkzeug.utils import secure_filename
+print("Importing SurveyAutomator...")
+from survey_automator import SurveyAutomator
+import threading
 
-# Optional imports
-try:
-    from PIL import Image
-    import pytesseract
-    OCR_AVAILABLE = True
-except ImportError:
-    OCR_AVAILABLE = False
+print("Initializing Flask app...")
+app = Flask(__name__, static_folder='static')
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 
-try:
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.chrome.service import Service
-    from selenium.common.exceptions import TimeoutException
-    SELENIUM_AVAILABLE = True
-except ImportError:
-    SELENIUM_AVAILABLE = False
+# Ensure directories exist
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs('static', exist_ok=True)
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for GitHub Pages
-
-# Store automation status
-automation_status = {
-    'running': False,
-    'messages': [],
-    'complete': False,
-    'error': None,
-    'final_url': None
-}
-
-def get_chrome_driver():
-    """Get Chrome driver configured for the current environment"""
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-software-rasterizer")
-
-    # Try to find Chrome/Chromium binary
-    import shutil
-    chrome_paths = [
-        shutil.which('chromium'),
-        shutil.which('chromium-browser'),
-        shutil.which('google-chrome'),
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/google-chrome',
-        os.environ.get('CHROME_BIN', '')
-    ]
-
-    for path in chrome_paths:
-        if path and os.path.exists(path):
-            options.binary_location = path
-            break
-
-    # Try to find chromedriver
-    chromedriver_paths = [
-        shutil.which('chromedriver'),
-        '/usr/bin/chromedriver',
-        os.environ.get('CHROMEDRIVER_PATH', '')
-    ]
-
-    service = None
-    for path in chromedriver_paths:
-        if path and os.path.exists(path):
-            service = Service(executable_path=path)
-            break
-
-    if service:
-        return webdriver.Chrome(service=service, options=options)
-    else:
-        return webdriver.Chrome(options=options)
-
-def log_status(message):
-    """Log a status message"""
-    timestamp = time.strftime("%H:%M:%S")
-    automation_status['messages'].append(f"[{timestamp}] {message}")
-
-def click_element_by_id(driver, element_id, timeout=15):
-    """Click element by ID using JavaScript"""
-    WebDriverWait(driver, timeout).until(
-        lambda d: d.execute_script(f"return document.getElementById('{element_id}') !== null")
-    )
-    driver.execute_script(f"""
-        var element = document.getElementById('{element_id}');
-        if (element) {{
-            element.scrollIntoView(true);
-            element.click();
-        }}
-    """)
-    time.sleep(0.3)
-
-def wait_and_click(driver, by, value, timeout=15):
-    """Wait for element and click it"""
-    WebDriverWait(driver, timeout).until(EC.presence_of_element_located((by, value)))
-    WebDriverWait(driver, timeout).until(EC.visibility_of_element_located((by, value)))
-    element = WebDriverWait(driver, timeout).until(EC.element_to_be_clickable((by, value)))
-    driver.execute_script("arguments[0].scrollIntoView(true);", element)
-    time.sleep(0.3)
-    element.click()
-    return element
-
-def wait_for_element(driver, by, value, timeout=15):
-    """Wait for element to be present"""
-    WebDriverWait(driver, timeout).until(EC.presence_of_element_located((by, value)))
-    return WebDriverWait(driver, timeout).until(EC.visibility_of_element_located((by, value)))
-
-def wait_for_page_load(driver):
-    """Wait for page to load"""
-    WebDriverWait(driver, 15).until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
-    )
-    time.sleep(0.5)
-
-def click_next(driver, delay=0.3):
-    """Click Next button"""
-    wait_and_click(driver, By.ID, "NextButton")
-    time.sleep(delay)
-    wait_for_page_load(driver)
-
-def run_survey_automation(survey_code):
-    """Run the survey automation"""
-    global automation_status
-    automation_status['running'] = True
-    automation_status['messages'] = []
-    automation_status['complete'] = False
-    automation_status['error'] = None
-    automation_status['final_url'] = None
-
-    driver = None
-    delay = 0.3
-
-    try:
-        log_status("Initializing browser...")
-        driver = get_chrome_driver()
-
-        log_status("Opening TellTims survey...")
-        driver.get("https://telltims.ca/")
-        time.sleep(3)
-
-        # Switch to iframe
-        try:
-            iframe = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "iframe"))
-            )
-            driver.switch_to.frame(iframe)
-            log_status("Switched to survey iframe")
-        except:
-            log_status("No iframe found")
-
-        time.sleep(2)
-
-        # Page 1: Enter survey code
-        log_status(f"Entering survey code: {survey_code}")
-        wait_for_page_load(driver)
-        code_input = wait_for_element(driver, By.ID, "QR~QID9")
-        code_input.clear()
-        code_input.send_keys(survey_code)
-        click_next(driver, delay)
-        log_status("Code submitted")
-
-        # Check for invalid code error
-        time.sleep(1)
-        page_source = driver.page_source.lower()
-        if any(phrase in page_source for phrase in [
-            'invalid', 'not valid', 'incorrect',
-            'please enter a valid', 'try again'
-        ]):
-            log_status("ERROR: Invalid survey code. Please check and try again.")
-            automation_status['error'] = "Invalid survey code"
-            automation_status['complete'] = True
-            return
-
-        # Page 2: Click Yes
-        log_status("Selecting 'Yes'...")
-        wait_for_page_load(driver)
-        click_element_by_id(driver, "QR~QID14~1")
-        click_next(driver, delay)
-
-        # Page 3: Highly Satisfied
-        log_status("Selecting 'Highly Satisfied'...")
-        click_element_by_id(driver, "QR~QID15~4")
-        click_next(driver, delay)
-
-        # Page 4: Enter text
-        log_status("Entering feedback text...")
-        wait_for_page_load(driver)
-        textarea = wait_for_element(driver, By.ID, "QR~QID45")
-        textarea.clear()
-        textarea.send_keys("Customer service")
-        click_next(driver, delay)
-
-        # Page 5: Dine-In
-        log_status("Selecting 'Dine-In'...")
-        click_element_by_id(driver, "QR~QID18~5")
-        click_next(driver, delay)
-
-        # Page 6: Front counter
-        log_status("Selecting 'Front counter'...")
-        click_element_by_id(driver, "QR~QID19~5")
-        click_next(driver, delay)
-
-        # Page 7: Beverage only
-        log_status("Selecting 'Beverage only'...")
-        click_element_by_id(driver, "QR~QID20~5")
-        click_next(driver, delay)
-
-        # Page 8: Satisfaction ratings
-        log_status("Rating all items 'Highly Satisfied'...")
-        satisfaction_ids = [
-            "QR~QID23~4~1", "QR~QID23~6~1", "QR~QID23~7~1",
-            "QR~QID23~8~1", "QR~QID23~10~1", "QR~QID23~11~1"
-        ]
-        for radio_id in satisfaction_ids:
-            try:
-                click_element_by_id(driver, radio_id)
-                time.sleep(delay * 0.2)
-            except Exception as e:
-                log_status(f"Could not find {radio_id}")
-        click_next(driver, delay)
-
-        # Page 9: Empty page
-        log_status("Proceeding...")
-        click_next(driver, delay)
-
-        # Page 10: No
-        log_status("Selecting 'No'...")
-        click_element_by_id(driver, "QR~QID151~3")
-        click_next(driver, delay)
-
-        # Page 11: Highly Likely
-        log_status("Selecting 'Highly Likely'...")
-        click_element_by_id(driver, "QR~QID44~1~1")
-        time.sleep(delay * 0.3)
-        click_element_by_id(driver, "QR~QID44~3~1")
-        click_next(driver, delay)
-
-        # Page 12: No
-        log_status("Selecting 'No'...")
-        click_element_by_id(driver, "QR~QID37~2")
-        click_next(driver, delay)
-
-        # Page 13: No
-        log_status("Selecting 'No'...")
-        click_element_by_id(driver, "QR~QID134~2")
-        click_next(driver, delay)
-
-        # Page 14: Yes
-        log_status("Selecting 'Yes'...")
-        click_element_by_id(driver, "QR~QID150~2")
-        click_next(driver, delay)
-
-        # Page 15: Something else
-        log_status("Selecting 'Something else'...")
-        click_element_by_id(driver, "QR~QID48~5")
-        click_next(driver, delay)
-
-        # Page 16: No
-        log_status("Selecting 'No'...")
-        click_element_by_id(driver, "QR~QID68~2")
-        click_next(driver, delay)
-
-        # Extract validation code and final page
-        log_status("Survey complete! Extracting validation code...")
-        time.sleep(2)
-
-        # Save current URL and page content
-        automation_status['final_url'] = driver.current_url
-        page_source = driver.page_source
-
-        # Look for validation code pattern like "CB38847"
-        match = re.search(r'Validation Code[:\s]*([A-Z0-9]+)', page_source, re.IGNORECASE)
-        if match:
-            validation_code = match.group(1)
-            log_status(f"✓ VALIDATION CODE: {validation_code}")
-        else:
-            log_status("Survey completed! Validation code should be visible on page.")
-
-        automation_status['complete'] = True
-        log_status("✓ Automation completed successfully! Final page is ready.")
-
-        # Keep browser open for 60 seconds to allow viewing
-        log_status("Browser will remain open for 60 seconds...")
-
-    except TimeoutException as e:
-        log_status(f"Timeout: {str(e)}")
-        automation_status['error'] = str(e)
-    except Exception as e:
-        log_status(f"Error: {str(e)}")
-        automation_status['error'] = str(e)
-    finally:
-        # Keep browser open briefly if successful
-        if driver and automation_status['complete'] and not automation_status['error']:
-            time.sleep(60)  # Keep open for 60 seconds
-
-        if driver:
-            driver.quit()
-        automation_status['running'] = False
+print("Initializing Automator...")
+automator = SurveyAutomator()
 
 @app.route('/')
 def index():
-    """Main page"""
-    return render_template('index.html', ocr_available=OCR_AVAILABLE)
+    return render_template('index.html')
 
-@app.route('/run-survey', methods=['POST'])
-def run_survey():
-    """Start survey automation"""
-    if not SELENIUM_AVAILABLE:
-        return jsonify({'error': 'Selenium not available'}), 500
+@app.route('/api/scan', methods=['POST'])
+def scan_image():
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image file provided'}), 400
+    
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
 
+    if file:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        try:
+            code, method = automator.scan_image(filepath)
+            os.remove(filepath)
+            
+            if code:
+                return jsonify({'success': True, 'code': code, 'method': method})
+            else:
+                return jsonify({'success': False, 'error': 'Could not detect code'}), 404
+                
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+@app.route('/api/start', methods=['POST'])
+def start_survey():
     data = request.json
-    survey_code = data.get('code', '').strip()
-
-    if not survey_code:
-        return jsonify({'error': 'Survey code required'}), 400
-
-    if automation_status['running']:
-        return jsonify({'error': 'Automation already running'}), 400
-
+    code = data.get('code')
+    
+    if not code:
+        return jsonify({'error': 'No code provided'}), 400
+    
+    if automator.is_running:
+        return jsonify({'error': 'Survey already running'}), 400
+        
     # Run in background thread
-    thread = threading.Thread(target=run_survey_automation, args=(survey_code,))
+    thread = threading.Thread(target=automator.start_survey, args=(code,))
     thread.daemon = True
     thread.start()
+    
+    return jsonify({'success': True, 'message': 'Survey started in background'})
 
-    return jsonify({'status': 'started'})
-
-@app.route('/status')
+@app.route('/api/status', methods=['GET'])
 def get_status():
-    """Get automation status"""
-    return jsonify(automation_status)
+    # Extract just the filename from the full path
+    image_filename = None
+    if automator.result_image_path:
+        image_filename = os.path.basename(automator.result_image_path)
+    
+    return jsonify({
+        'status': automator.status,
+        'progress': automator.progress,
+        'logs': automator.logs,
+        'image': image_filename,  # Just the filename
+        'result_code': automator.result_code,
+        'is_running': automator.is_running
+    })
 
-@app.route('/extract-code', methods=['POST'])
-def extract_code():
-    """Extract survey code from uploaded image"""
-    if not OCR_AVAILABLE:
-        return jsonify({'error': 'OCR not available. Install pytesseract.'}), 500
-
-    if 'image' not in request.files and 'image_data' not in request.json:
-        return jsonify({'error': 'No image provided'}), 400
-
-    try:
-        if 'image' in request.files:
-            # File upload
-            file = request.files['image']
-            image = Image.open(file.stream)
-        else:
-            # Base64 image data
-            image_data = request.json['image_data']
-            # Remove data URL prefix if present
-            if ',' in image_data:
-                image_data = image_data.split(',')[1]
-            image = Image.open(BytesIO(base64.b64decode(image_data)))
-
-        # Perform OCR
-        text = pytesseract.image_to_string(image)
-
-        # Find survey code patterns
-        patterns = [
-            r'\b\d{21}\b',
-            r'\b\d{18,24}\b',
-            r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b',
-            r'\b\d{12,16}\b',
-        ]
-
-        for pattern in patterns:
-            matches = re.findall(pattern, text)
-            if matches:
-                code = matches[0].replace('-', '').replace(' ', '')
-                return jsonify({'code': code})
-
-        return jsonify({'error': 'Could not find survey code in image'}), 404
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/api/screenshot/<filename>', methods=['GET'])
+def get_screenshot(filename):
+    """Serve screenshot from temp directory"""
+    import tempfile
+    temp_dir = tempfile.gettempdir()
+    filepath = os.path.join(temp_dir, filename)
+    
+    if os.path.exists(filepath):
+        return send_file(filepath, mimetype='image/png')
+    else:
+        return jsonify({'error': 'Screenshot not found'}), 404
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    # Run on 0.0.0.0 to be accessible from other devices (mobile)
+    # Disable debug mode to prevent reloader issues on Windows
+    # Using port 5001 instead of 5000 due to zombie process on 5000
+    print("Starting server on port 5001...")
+    app.run(host='0.0.0.0', port=5001, debug=False)
