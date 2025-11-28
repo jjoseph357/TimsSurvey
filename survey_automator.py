@@ -110,7 +110,26 @@ class DriverPool:
         options.add_experimental_option('useAutomationExtension', False)
         options.add_argument('--disable-blink-features=AutomationControlled')
         
-        service = Service(ChromeDriverManager().install())
+        # RPi/Linux specific: Check for system chromedriver
+        import platform
+        if platform.system() == 'Linux':
+            options.add_argument('--headless=new') # Optional: Run headless on Pi
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            
+            # Try using system chromedriver first (common on RPi)
+            system_driver_path = "/usr/bin/chromedriver"
+            if os.path.exists(system_driver_path):
+                service = Service(system_driver_path)
+            else:
+                try:
+                    service = Service(ChromeDriverManager().install())
+                except:
+                    # Fallback for RPi if manager fails
+                    service = Service("/usr/lib/chromium-browser/chromedriver")
+        else:
+            service = Service(ChromeDriverManager().install())
+
         driver = webdriver.Chrome(service=service, options=options)
         
         # Stealth JS

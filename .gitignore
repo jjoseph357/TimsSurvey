@@ -4,3 +4,6 @@ __pycache__/
 *.png
 *.log
 uploads/
+build/
+dist/
+*.spec
