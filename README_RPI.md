@@ -79,3 +79,21 @@ If you need to update the app to the latest version (e.g., to get multi-user sup
     ```bash
     ./start_app.sh
     ```
+
+## Troubleshooting
+
+*   **"Port 5001 is in use"**:
+    If the app fails to start because the port is taken, you can kill the old process:
+    ```bash
+    # Find the Process ID (PID)
+    lsof -i :5001
+    
+    # Kill it (replace 1234 with the PID)
+    kill -9 1234
+    
+    # Or use this one-liner to kill whatever is on port 5001:
+    fuser -k 5001/tcp
+    ```
+
+*   **"Driver not found"**: The script installs `chromium-chromedriver`. If Selenium complains, ensure `survey_automator.py` is using the installed driver. The updated code should handle this automatically.
+*   **Slow performance**: The Pi 5 is fast, but OCR can be CPU intensive. Ensure you have good cooling.

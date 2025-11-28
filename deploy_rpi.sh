@@ -43,6 +43,15 @@ source venv/bin/activate
 export FLASK_APP=app.py
 export FLASK_ENV=production
 
+# Check if port 5001 is in use and kill the process
+PORT=5001
+PID=\$(lsof -t -i:\$PORT)
+if [ -n "\$PID" ]; then
+    echo "Port \$PORT is in use by PID \$PID. Killing it..."
+    kill -9 \$PID
+    sleep 1
+fi
+
 # Start Flask in background
 python3 app.py &
 FLASK_PID=\$!
@@ -56,6 +65,16 @@ ngrok http 5001 > /dev/null &
 
 echo "App running! Access via Ngrok URL."
 echo "Press Ctrl+C to stop."
+
+# Cleanup function
+cleanup() {
+    echo "Stopping app..."
+    kill \$FLASK_PID
+    pkill ngrok
+    exit
+}
+
+trap cleanup SIGINT
 
 wait \$FLASK_PID
 EOL
