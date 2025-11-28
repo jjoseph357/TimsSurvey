@@ -278,201 +278,403 @@
 
             <button class="btn-primary" id="startBtn" style="display:none;">Start Survey</button>
             <button class="btn-secondary" id="retryBtn" style="display:none;">Scan Again</button>
-
-            <div class="status" id="status"></div>
-        </div>
-    </div>
-
-    <script>
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
-        const codeInput = document.getElementById('codeInput');
-        const codeContainer = document.getElementById('codeContainer');
-        const startBtn = document.getElementById('startBtn');
-        const retryBtn = document.getElementById('retryBtn');
-        const status = document.getElementById('status');
-        const loading = document.getElementById('loading');
-        const progressContainer = document.getElementById('progress-container');
-        const progressBar = document.getElementById('progress-bar');
-        const statusText = document.getElementById('status-text');
-        const logsArea = document.getElementById('logs-area');
-        const resultContainer = document.getElementById('result-container');
-        const resultImage = document.getElementById('result-image');
-        const resultLink = document.getElementById('result-link');
-
-        let currentTab = 'scan';
-        let pollInterval = null;
-
-        function switchTab(tab) {
-            currentTab = tab;
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-            const tabIndex = tab === 'scan' ? 0 : 1;
-            document.querySelectorAll('.tab')[tabIndex].classList.add('active');
-            document.getElementById(tab + '-tab').classList.add('active');
-
-            status.classList.remove('active');
-            progressContainer.style.display = 'none';
-            resultContainer.style.display = 'none';
-
-            if (tab === 'manual') {
-                codeContainer.style.display = 'block';
-                startBtn.style.display = 'block';
-                retryBtn.style.display = 'none';
-                codeInput.value = '';
-                codeInput.focus();
-            } else {
-                codeContainer.style.display = 'none';
-                startBtn.style.display = 'none';
-                retryBtn.style.display = 'none';
-            }
-        }
-
-        codeInput.addEventListener('input', (e) => {
-            let value = e.target.value.replace(/\D/g, '');
-            if (value.length > 21) value = value.slice(0, 21);
-
-            let formatted = '';
-            for (let i = 0; i < value.length; i++) {
-                if (i > 0 && i % 4 === 0 && i < 17) formatted += '-';
-                formatted += value[i];
-            }
-            e.target.value = formatted;
-        });
-
-        uploadArea.addEventListener('click', () => fileInput.click());
-
-        fileInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (file) await scanImage(file);
-        });
-
-        async function scanImage(file) {
-            loading.classList.add('active');
-            status.classList.remove('active');
-            codeContainer.style.display = 'none';
-            startBtn.style.display = 'none';
-
-            const formData = new FormData();
-            formData.append('image', file);
-
-            try {
-                const response = await fetch('/api/scan', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    let code = data.code.replace(/-/g, '');
-                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                    nativeInputValueSetter.call(codeInput, code);
-                    codeInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-                    codeContainer.style.display = 'block';
-                    startBtn.style.display = 'block';
-                    retryBtn.style.display = 'block';
-                    showStatus('Code detected! Method: ' + data.method, 'success');
-                } else {
-                    showStatus('Could not detect code. Please try again or use Manual Entry.', 'error');
-                    retryBtn.style.display = 'block';
-                }
-            } catch (error) {
-                showStatus('Error: ' + error.message, 'error');
-                retryBtn.style.display = 'block';
-            } finally {
-                loading.classList.remove('active');
-            }
-        }
-
-        startBtn.addEventListener('click', async () => {
-            const code = codeInput.value.replace(/-/g, '');
-
-            if (code.length < 21) {
-                showStatus('Code must be 21 digits', 'error');
-                return;
+            text-align: center;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            color: #c8102e;
+            font-weight: bold;
+            letter-spacing: 2px;
             }
 
-            codeContainer.style.display = 'none';
-            startBtn.style.display = 'none';
-            retryBtn.style.display = 'none';
-            document.querySelector('.tabs').style.display = 'none';
-            document.querySelector('.content').style.paddingTop = '0';
-            document.getElementById('scan-tab').style.display = 'none';
-            document.getElementById('manual-tab').style.display = 'none';
-
-            progressContainer.style.display = 'block';
-
-            try {
-                const response = await fetch('/api/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code: code })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    startPolling();
-                } else {
-                    showStatus('Error: ' + data.error, 'error');
-                    progressContainer.style.display = 'none';
-                    startBtn.style.display = 'block';
-                }
-            } catch (error) {
-                showStatus('Error: ' + error.message, 'error');
-                progressContainer.style.display = 'none';
-                startBtn.style.display = 'block';
+            .code-input:focus {
+            outline: none;
+            border-color: #c8102e;
             }
-        });
 
-        function startPolling() {
-            pollInterval = setInterval(async () => {
-                try {
-                    const response = await fetch('/api/status');
-                    const data = await response.json();
+            .helper-text {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+            margin-bottom: 20px;
+            }
 
-                    progressBar.style.width = data.progress + '%';
-                    statusText.textContent = data.status;
+            .upload-area {
+            border: 3px dashed #ddd;
+            border-radius: 10px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+            }
 
-                    logsArea.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
-                    logsArea.scrollTop = logsArea.scrollHeight;
+            .upload-area:hover {
+            border-color: #c8102e;
+            background: #fff5f7;
+            }
 
-                    if (data.image) {
-                        clearInterval(pollInterval);
+            .upload-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+            }
+
+            input[type="file"] {
+            display: none;
+            }
+
+            button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 10px;
+            }
+
+            .btn-primary {
+            background: #c8102e;
+            color: white;
+            }
+
+            .btn-primary:hover {
+            background: #a00d25;
+            }
+
+            .btn-secondary {
+            background: #4a2c2a;
+            color: white;
+            }
+
+            .btn-secondary:hover {
+            background: #3a1f1d;
+            }
+
+            .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            display: none;
+            }
+
+            .status.active {
+            display: block;
+            }
+
+            .status.success {
+            background: #d4edda;
+            color: #155724;
+            }
+
+            .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            }
+
+            .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            }
+
+            .loading.active {
+            display: block;
+            }
+
+            .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #c8102e;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+            }
+
+            @keyframes spin {
+            0% {
+            transform: rotate(0deg);
+            }
+
+            100% {
+            transform: rotate(360deg);
+            }
+            }
+
+            #result-link:hover img {
+            transform: scale(1.02);
+            border-color: #c8102e;
+            }
+            </style>
+            </head>
+
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>TellTims Survey</h1>
+                    </div>
+
+                    <div class="tabs">
+                        <div class="tab active" onclick="switchTab('scan')">Scan Receipt</div>
+                        <div class="tab" onclick="switchTab('manual')">Manual Entry</div>
+                    </div>
+
+                    <div class="content">
+                        <div id="scan-tab" class="tab-content active">
+                            <div class="upload-area" id="uploadArea">
+                                <div class="upload-icon">📷</div>
+                                <p><strong>Tap to take a photo</strong></p>
+                                <p style="font-size: 14px; color: #666;">or drop an image here</p>
+                            </div>
+                            <input type="file" id="fileInput" accept="image/*" capture="environment">
+                        </div>
+
+                        <div id="manual-tab" class="tab-content">
+                            <div class="helper-text">Enter the 21-digit code from your receipt</div>
+                        </div>
+
+                        <div class="code-input-container" id="codeContainer" style="display:none;">
+                            <input type="text" id="codeInput" class="code-input" placeholder="0000-0000-0000-0000-00000"
+                                maxlength="26">
+                            <div class="helper-text">You can edit the code if needed</div>
+                        </div>
+
+                        <div id="progress-container" style="display:none; margin-top: 20px;">
+                            <div
+                                style="background:#eee; border-radius:10px; height:10px; overflow:hidden; margin-bottom:10px;">
+                                <div id="progress-bar"
+                                    style="width:0%; height:100%; background:#c8102e; transition:width 0.5s;">
+                                </div>
+                            </div>
+                            <div id="status-text" style="text-align:center; font-weight:bold; margin-bottom:10px;">
+                                Starting...</div>
+                            <div id="logs-area"
+                                style="background:#f9f9f9; padding:10px; border-radius:5px; height:150px; overflow-y:auto; font-family:monospace; font-size:12px; border:1px solid #eee;">
+                            </div>
+                        </div>
+
+                        <div id="result-container" style="display:none; margin-top: 20px; text-align:center;">
+                            <h3 style="color:#155724; margin-bottom:10px;">✓ Survey Complete!</h3>
+                            <div id="validation-code"
+                                style="font-size:24px; font-weight:bold; color:#c8102e; margin:15px 0;"></div>
+                            <p style="color:#666; margin-bottom:10px; font-size:14px;">Click image to open full size</p>
+                            <a id="result-link" href="" target="_blank" style="display:inline-block; cursor:pointer;">
+                                <img id="result-image" src=""
+                                    style="max-width:100%; max-height:600px; border-radius:10px; border:2px solid #ddd; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: transform 0.2s, border-color 0.2s;">
+                            </a>
+                            <button class="btn-primary" onclick="location.reload()" style="margin-top:15px;">Start New
+                                Survey</button>
+                        </div>
+
+                        <div class="loading" id="loading">
+                            <div class="spinner"></div>
+                            <p>Processing...</p>
+                        </div>
+
+                        <button class="btn-primary" id="startBtn" style="display:none;">Start Survey</button>
+                        <button class="btn-secondary" id="retryBtn" style="display:none;">Scan Again</button>
+
+                        <div class="status" id="status"></div>
+                    </div>
+                </div>
+
+                <script>
+                    const uploadArea = document.getElementById('uploadArea');
+                    const fileInput = document.getElementById('fileInput');
+                    const codeInput = document.getElementById('codeInput');
+                    const codeContainer = document.getElementById('codeContainer');
+                    const startBtn = document.getElementById('startBtn');
+                    const retryBtn = document.getElementById('retryBtn');
+                    const status = document.getElementById('status');
+                    const loading = document.getElementById('loading');
+                    const progressContainer = document.getElementById('progress-container');
+                    const progressBar = document.getElementById('progress-bar');
+                    const statusText = document.getElementById('status-text');
+                    const logsArea = document.getElementById('logs-area');
+                    const resultContainer = document.getElementById('result-container');
+                    const resultImage = document.getElementById('result-image');
+                    const resultLink = document.getElementById('result-link');
+
+                    let currentTab = 'scan';
+                    let pollInterval = null;
+                    let currentSessionId = null;
+
+                    function switchTab(tab) {
+                        currentTab = tab;
+                        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+                        const tabIndex = tab === 'scan' ? 0 : 1;
+                        document.querySelectorAll('.tab')[tabIndex].classList.add('active');
+                        document.getElementById(tab + '-tab').classList.add('active');
+
+                        status.classList.remove('active');
                         progressContainer.style.display = 'none';
-                        resultContainer.style.display = 'block';
+                        resultContainer.style.display = 'none';
 
-                        const imageSrc = '/api/screenshot/' + data.image + '?t=' + new Date().getTime();
-                        resultImage.src = imageSrc;
-                        resultLink.href = imageSrc;
-
-                        if (data.result_code) {
-                            document.getElementById('validation-code').textContent = 'Validation Code: ' + data.result_code;
+                        if (tab === 'manual') {
+                            codeContainer.style.display = 'block';
+                            startBtn.style.display = 'block';
+                            retryBtn.style.display = 'none';
+                            codeInput.value = '';
+                            codeInput.focus();
+                        } else {
+                            codeContainer.style.display = 'none';
+                            startBtn.style.display = 'none';
+                            retryBtn.style.display = 'none';
                         }
                     }
 
-                } catch (e) {
-                    console.error("Polling error", e);
-                }
-            }, 1000);
-        }
+                    codeInput.addEventListener('input', (e) => {
+                        let value = e.target.value.replace(/\D/g, '');
+                        if (value.length > 21) value = value.slice(0, 21);
 
-        retryBtn.addEventListener('click', () => {
-            fileInput.value = '';
-            codeContainer.style.display = 'none';
-            startBtn.style.display = 'none';
-            retryBtn.style.display = 'none';
-            status.classList.remove('active');
-        });
+                        let formatted = '';
+                        for (let i = 0; i < value.length; i++) {
+                            if (i > 0 && i % 4 === 0 && i < 17) formatted += '-';
+                            formatted += value[i];
+                        }
+                        e.target.value = formatted;
+                    });
 
-        function showStatus(message, type) {
-            status.textContent = message;
-            status.className = 'status active ' + type;
-        }
-    </script>
-</body>
+                    uploadArea.addEventListener('click', () => fileInput.click());
+
+                    fileInput.addEventListener('change', async (e) => {
+                        const file = e.target.files[0];
+                        if (file) await scanImage(file);
+                    });
+
+                    async function scanImage(file) {
+                        loading.classList.add('active');
+                        status.classList.remove('active');
+                        codeContainer.style.display = 'none';
+                        startBtn.style.display = 'none';
+
+                        const formData = new FormData();
+                        formData.append('image', file);
+
+                        try {
+                            const response = await fetch('/api/scan', {
+                                method: 'POST',
+                                body: formData
+                            });
+
+                            const data = await response.json();
+
+                            if (data.success) {
+                                let code = data.code.replace(/-/g, '');
+                                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                                nativeInputValueSetter.call(codeInput, code);
+                                codeInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+                                codeContainer.style.display = 'block';
+                                startBtn.style.display = 'block';
+                                retryBtn.style.display = 'block';
+                                showStatus('Code detected! Method: ' + data.method, 'success');
+                            } else {
+                                showStatus('Could not detect code. Please try again or use Manual Entry.', 'error');
+                                retryBtn.style.display = 'block';
+                            }
+                        } catch (error) {
+                            showStatus('Error: ' + error.message, 'error');
+                            retryBtn.style.display = 'block';
+                        } finally {
+                            loading.classList.remove('active');
+                        }
+                    }
+
+                    startBtn.addEventListener('click', async () => {
+                        const code = codeInput.value.replace(/-/g, '');
+
+                        if (code.length < 21) {
+                            showStatus('Code must be 21 digits', 'error');
+                            return;
+                        }
+
+                        codeContainer.style.display = 'none';
+                        startBtn.style.display = 'none';
+                        retryBtn.style.display = 'none';
+                        document.querySelector('.tabs').style.display = 'none';
+                        document.querySelector('.content').style.paddingTop = '0';
+                        document.getElementById('scan-tab').style.display = 'none';
+                        document.getElementById('manual-tab').style.display = 'none';
+
+                        progressContainer.style.display = 'block';
+
+                        try {
+                            const response = await fetch('/api/start', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ code: code })
+                            });
+
+                            const data = await response.json();
+
+                            if (data.success) {
+                                currentSessionId = data.session_id;
+                                startPolling();
+                            } else {
+                                showStatus('Error: ' + data.error, 'error');
+                                progressContainer.style.display = 'none';
+                                startBtn.style.display = 'block';
+                            }
+                        } catch (error) {
+                            showStatus('Error: ' + error.message, 'error');
+                            progressContainer.style.display = 'none';
+                            startBtn.style.display = 'block';
+                        }
+                    });
+
+                    function startPolling() {
+                        pollInterval = setInterval(async () => {
+                            try {
+                                if (!currentSessionId) return;
+                                const response = await fetch('/api/status?session_id=' + currentSessionId);
+                                const data = await response.json();
+
+                                progressBar.style.width = data.progress + '%';
+                                statusText.textContent = data.status;
+
+                                logsArea.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
+                                logsArea.scrollTop = logsArea.scrollHeight;
+
+                                if (data.image) {
+                                    clearInterval(pollInterval);
+                                    progressContainer.style.display = 'none';
+                                    resultContainer.style.display = 'block';
+
+                                    const imageSrc = '/api/screenshot/' + data.image + '?t=' + new Date().getTime();
+                                    resultImage.src = imageSrc;
+                                    resultLink.href = imageSrc;
+
+                                    if (data.result_code) {
+                                        document.getElementById('validation-code').textContent = 'Validation Code: ' + data.result_code;
+                                    }
+                                }
+
+                            } catch (e) {
+                                console.error("Polling error", e);
+                            }
+                        }, 1000);
+                    }
+
+                    retryBtn.addEventListener('click', () => {
+                        fileInput.value = '';
+                        codeContainer.style.display = 'none';
+                        startBtn.style.display = 'none';
+                        retryBtn.style.display = 'none';
+                        status.classList.remove('active');
+                    });
+
+                    function showStatus(message, type) {
+                        status.textContent = message;
+                        status.className = 'status active ' + type;
+                    }
+                </script>
+            </body>
 
 </html>

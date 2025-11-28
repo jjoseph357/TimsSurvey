@@ -1,10 +1,12 @@
 print("Starting app.py...")
 from flask import Flask, render_template, request, jsonify, send_file
 import os
+import uuid
+import threading
+import time
 from werkzeug.utils import secure_filename
 print("Importing SurveyAutomator...")
 from survey_automator import SurveyAutomator
-import threading
 
 print("Initializing Flask app...")
 app = Flask(__name__, static_folder='static')
@@ -15,8 +17,23 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('static', exist_ok=True)
 
-print("Initializing Automator...")
-automator = SurveyAutomator()
+# Session Store: session_id -> SurveyAutomator instance
+active_sessions = {}
+
+def cleanup_sessions():
+    """Background task to remove old sessions"""
+    while True:
+        try:
+            time.sleep(300) # Check every 5 minutes
+            # Logic to remove old sessions could go here
+            # For now, we'll just keep them in memory as they are small objects
+            # Real implementation would check last_activity timestamp
+        except:
+            pass
+
+# Start cleanup thread
+cleanup_thread = threading.Thread(target=cleanup_sessions, daemon=True)
+cleanup_thread.start()
 
 @app.route('/')
 def index():
@@ -37,7 +54,9 @@ def scan_image():
         file.save(filepath)
         
         try:
-            code, method = automator.scan_image(filepath)
+            # Create temporary automator for scanning
+            temp_automator = SurveyAutomator()
+            code, method = temp_automator.scan_image(filepath)
             os.remove(filepath)
             
             if code:
@@ -56,18 +75,31 @@ def start_survey():
     if not code:
         return jsonify({'error': 'No code provided'}), 400
     
-    if automator.is_running:
-        return jsonify({'error': 'Survey already running'}), 400
-        
+    # Create new session
+    session_id = str(uuid.uuid4())
+    automator = SurveyAutomator()
+    active_sessions[session_id] = automator
+    
     # Run in background thread
     thread = threading.Thread(target=automator.start_survey, args=(code,))
     thread.daemon = True
     thread.start()
     
-    return jsonify({'success': True, 'message': 'Survey started in background'})
+    return jsonify({
+        'success': True, 
+        'message': 'Survey started',
+        'session_id': session_id
+    })
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
+    session_id = request.args.get('session_id')
+    
+    if not session_id or session_id not in active_sessions:
+        return jsonify({'error': 'Invalid session'}), 404
+        
+    automator = active_sessions[session_id]
+    
     # Extract just the filename from the full path
     image_filename = None
     if automator.result_image_path:
@@ -77,7 +109,7 @@ def get_status():
         'status': automator.status,
         'progress': automator.progress,
         'logs': automator.logs,
-        'image': image_filename,  # Just the filename
+        'image': image_filename,
         'result_code': automator.result_code,
         'is_running': automator.is_running
     })
@@ -96,7 +128,5 @@ def get_screenshot(filename):
 
 if __name__ == '__main__':
     # Run on 0.0.0.0 to be accessible from other devices (mobile)
-    # Disable debug mode to prevent reloader issues on Windows
-    # Using port 5001 instead of 5000 due to zombie process on 5000
     print("Starting server on port 5001...")
     app.run(host='0.0.0.0', port=5001, debug=False)

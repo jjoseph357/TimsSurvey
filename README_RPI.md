@@ -60,3 +60,22 @@ To make the app start automatically when the Pi turns on:
 
 *   **"Driver not found"**: The script installs `chromium-chromedriver`. If Selenium complains, ensure `survey_automator.py` is using the installed driver. The updated code should handle this automatically.
 *   **Slow performance**: The Pi 5 is fast, but OCR can be CPU intensive. Ensure you have good cooling.
+
+## Updating the App
+
+If you need to update the app to the latest version (e.g., to get multi-user support):
+
+1.  **Stop the running app**:
+    *   If running in terminal: Press `Ctrl+C`.
+    *   If running as a service: `sudo systemctl stop telltims` (if you set that up).
+
+2.  **Pull latest changes**:
+    ```bash
+    cd TimsSurvey
+    git pull
+    ```
+
+3.  **Restart the app**:
+    ```bash
+    ./start_app.sh
+    ```
