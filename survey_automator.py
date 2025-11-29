@@ -179,29 +179,79 @@ class SurveyAutomator:
             return match.group(0)
         return None
 
+    def clean_receipt(self, image_path):
+        """
+        Advanced image preprocessing for receipts using:
+        1. Green channel extraction
+        2. CLAHE (Contrast Limited Adaptive Histogram Equalization)
+        3. Morphological Black Hat (Background subtraction)
+        4. Adaptive Thresholding
+        """
+        if not CAMERA_AVAILABLE:
+            return None
+
+        try:
+            # 1. Read image
+            img = cv2.imread(image_path)
+            if img is None: return None
+            
+            # 2. Extract Green Channel (usually best for thermal paper)
+            if len(img.shape) == 3:
+                b, g, r = cv2.split(img)
+            else:
+                g = img # Already grayscale
+            
+            # 3. CLAHE
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(g)
+            
+            # 4. Morphological Black Hat (Background subtraction)
+            # Kernel size depends on font size - 15x15 is a safe starting point for receipts
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+            blackhat = cv2.morphologyEx(enhanced, cv2.MORPH_BLACKHAT, kernel)
+            
+            # 5. Invert to make text black on white again
+            blackhat = cv2.bitwise_not(blackhat)
+            
+            # 6. Adaptive Thresholding
+            binary = cv2.adaptiveThreshold(enhanced, 255, 
+                                        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                        cv2.THRESH_BINARY, 19, 10)
+            return binary
+        except Exception as e:
+            logger.error(f"Error in clean_receipt: {e}")
+            return None
+
     def scan_image(self, image_path):
         if not OCR_AVAILABLE:
             return None, "OCR Not Available"
 
         custom_config = r'--oem 3 --psm 6'
         try:
+            # Method 1: Original Image
             image = Image.open(image_path)
             text = pytesseract.image_to_string(image, config=custom_config)
             code = self.extract_code_from_text(text)
             if code: return code, "Original"
             
             if CAMERA_AVAILABLE:
+                # Method 2: Advanced Preprocessing (CLAHE + BlackHat)
+                processed_img = self.clean_receipt(image_path)
+                if processed_img is not None:
+                    text = pytesseract.image_to_string(processed_img, config=custom_config)
+                    code = self.extract_code_from_text(text)
+                    if code: return code, "Advanced Preprocessing"
+
+                # Method 3: Simple Sharpening (Fallback)
                 img_cv = cv2.imread(image_path)
-                if img_cv is None: return None, "Failed to load image"
-                gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-                
-                # Sharpening
-                kernel = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
-                sharpened = cv2.filter2D(gray, -1, kernel)
-                _, sharp_thresh = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                text = pytesseract.image_to_string(sharp_thresh, config=custom_config)
-                code = self.extract_code_from_text(text)
-                if code: return code, "Sharpening"
+                if img_cv is not None:
+                    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+                    kernel = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
+                    sharpened = cv2.filter2D(gray, -1, kernel)
+                    _, sharp_thresh = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    text = pytesseract.image_to_string(sharp_thresh, config=custom_config)
+                    code = self.extract_code_from_text(text)
+                    if code: return code, "Sharpening"
                 
         except Exception as e:
             logger.error(f"Error in scan_image: {e}")

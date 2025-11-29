@@ -431,7 +431,19 @@
         });
 
         function startPolling() {
+            let attempts = 0;
+            const maxAttempts = 300; // 5 minutes at 1s interval
+
             pollInterval = setInterval(async () => {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(pollInterval);
+                    showStatus('Survey timed out. Please check manually or try again.', 'error');
+                    retryBtn.style.display = 'block';
+                    progressContainer.style.display = 'none';
+                    return;
+                }
+
                 try {
                     if (!currentSessionId) return;
                     const response = await fetch('/api/status?session_id=' + currentSessionId);
