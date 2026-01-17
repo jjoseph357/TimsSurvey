@@ -40,93 +40,7 @@
             font-weight: bold;
         }
 
-        .tabs {
-            display: flex;
-            background: #f1f1f1;
-            border-bottom: 1px solid #ddd;
-        }
 
-        .tab {
-            flex: 1;
-            padding: 15px;
-            text-align: center;
-            cursor: pointer;
-            font-weight: 600;
-            color: #666;
-            transition: all 0.3s;
-        }
-
-        .tab.active {
-            background: white;
-            color: #c8102e;
-            border-bottom: 3px solid #c8102e;
-        }
-
-        .content {
-            padding: 30px;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .code-input-container {
-            margin-bottom: 20px;
-        }
-
-        .code-input {
-            width: 100%;
-            padding: 15px;
-            font-size: 24px;
-            font-family: monospace;
-            text-align: center;
-            border: 2px solid #ddd;
-            border-radius: 10px;
-            color: #c8102e;
-            font-weight: bold;
-            letter-spacing: 2px;
-        }
-
-        .code-input:focus {
-            outline: none;
-            border-color: #c8102e;
-        }
-
-        .helper-text {
-            text-align: center;
-            color: #666;
-            font-size: 14px;
-            margin-top: 5px;
-            margin-bottom: 20px;
-        }
-
-        .upload-area {
-            border: 3px dashed #ddd;
-            border-radius: 10px;
-            padding: 40px 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-bottom: 20px;
-        }
-
-        .upload-area:hover {
-            border-color: #c8102e;
-            background: #fff5f7;
-        }
-
-        .upload-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-
-        input[type="file"] {
-            display: none;
-        }
 
         button {
             width: 100%;
@@ -272,36 +186,35 @@
     </div>
 
     <script>
-        <script>
-            const startBtn = document.getElementById('startBtn');
-            const retryBtn = document.getElementById('retryBtn'); // Kept for error states
-            const status = document.getElementById('status');
-            const loading = document.getElementById('loading');
-            const progressContainer = document.getElementById('progress-container');
-            const progressBar = document.getElementById('progress-bar');
-            const statusText = document.getElementById('status-text');
-            const logsArea = document.getElementById('logs-area');
-            const resultContainer = document.getElementById('result-container');
-            const resultImage = document.getElementById('result-image');
-            const resultLink = document.getElementById('result-link');
-            const codeInput = document.getElementById('codeInput');
-            const codeContainer = document.getElementById('codeContainer');
-            const counterValue = document.getElementById('counter-value');
+        const startBtn = document.getElementById('startBtn');
+        const retryBtn = document.getElementById('retryBtn');
+        const status = document.getElementById('status');
+        const loading = document.getElementById('loading');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const statusText = document.getElementById('status-text');
+        const logsArea = document.getElementById('logs-area');
+        const resultContainer = document.getElementById('result-container');
+        const resultImage = document.getElementById('result-image');
+        const resultLink = document.getElementById('result-link');
+        const codeInput = document.getElementById('codeInput');
+        const codeContainer = document.getElementById('codeContainer');
+        const counterValue = document.getElementById('counter-value');
 
-            let pollInterval = null;
-            let currentSessionId = null;
+        let pollInterval = null;
+        let currentSessionId = null;
 
-            // Initialize
-            startBtn.style.display = 'block';
+        // Initialize state
+        startBtn.style.display = 'block';
 
         codeInput.addEventListener('input', (e) => {
-                let value = e.target.value.replace(/\D/g, '');
+            let value = e.target.value.replace(/\D/g, '');
             if (value.length > 21) value = value.slice(0, 21);
 
             let formatted = '';
             for (let i = 0; i < value.length; i++) {
                 if (i > 0 && i % 4 === 0 && i < 17) formatted += '-';
-            formatted += value[i];
+                formatted += value[i];
             }
             e.target.value = formatted;
         });
@@ -311,62 +224,60 @@
 
             if (code.length < 21) {
                 showStatus('Code must be 21 digits', 'error');
-            return;
+                return;
             }
 
             codeContainer.style.display = 'none';
             startBtn.style.display = 'none';
             retryBtn.style.display = 'none';
-            // document.querySelector('.tabs').style.display = 'none'; // Tabs removed
-            // document.querySelector('.content').style.paddingTop = '0';
 
             progressContainer.style.display = 'block';
 
             try {
                 const response = await fetch('/api/start', {
-                method: 'POST',
-            headers: {'Content-Type': 'application/json' },
-            body: JSON.stringify({code: code })
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
                 });
 
-            const data = await response.json();
+                const data = await response.json();
 
-            if (data.success) {
-                currentSessionId = data.session_id;
-            startPolling();
+                if (data.success) {
+                    currentSessionId = data.session_id;
+                    startPolling();
                 } else {
-                showStatus('Error: ' + data.error, 'error');
-            progressContainer.style.display = 'none';
-            startBtn.style.display = 'block';
+                    showStatus('Error: ' + data.error, 'error');
+                    progressContainer.style.display = 'none';
+                    startBtn.style.display = 'block';
                 }
             } catch (error) {
                 showStatus('Error: ' + error.message, 'error');
-            progressContainer.style.display = 'none';
-            startBtn.style.display = 'block';
+                progressContainer.style.display = 'none';
+                startBtn.style.display = 'block';
             }
         });
 
-            function startPolling() {
-                let attempts = 0;
+        function startPolling() {
+            let attempts = 0;
             const maxAttempts = 300; // 5 minutes at 1s interval
 
             pollInterval = setInterval(async () => {
                 attempts++;
                 if (attempts > maxAttempts) {
-                clearInterval(pollInterval);
-            showStatus('Survey timed out. Please check manually or try again.', 'error');
-            retryBtn.style.display = 'block';
-            progressContainer.style.display = 'none';
-            return;
+                    clearInterval(pollInterval);
+                    showStatus('Survey timed out. Please check manually or try again.', 'error');
+                    retryBtn.style.display = 'block';
+                    progressContainer.style.display = 'none';
+                    return;
                 }
 
-            try {
+                try {
                     if (!currentSessionId) return;
-            const response = await fetch('/api/status?session_id=' + currentSessionId);
-            const data = await response.json();
+                    const response = await fetch('/api/status?session_id=' + currentSessionId);
+                    const data = await response.json();
 
-            progressBar.style.width = data.progress + '%';
-            statusText.textContent = data.status;
+                    progressBar.style.width = data.progress + '%';
+                    statusText.textContent = data.status;
 
                     logsArea.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
                     logsArea.scrollTop = logsArea.scrollHeight;
@@ -380,11 +291,11 @@
                         resultImage.src = imageSrc;
                         resultLink.href = imageSrc;
 
-                    if (data.result_code) {
+                        if (data.result_code) {
                             document.getElementById('validation-code').textContent = 'Validation Code: ' + data.result_code;
                         }
                     }
-                    
+
                     if (data.global_counter !== undefined) {
                         counterValue.textContent = data.global_counter;
                     }
