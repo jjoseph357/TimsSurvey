@@ -11,7 +11,7 @@ sudo apt update && sudo apt upgrade -y
 
 # 2. Install System Dependencies
 echo "Installing system dependencies..."
-sudo apt install -y python3-pip python3-venv chromium-browser chromium-chromedriver tesseract-ocr libtesseract-dev libatlas-base-dev
+sudo apt install -y python3-pip python3-venv chromium-browser chromium-chromedriver
 
 # 3. Create Python Virtual Environment
 echo "Setting up Python environment..."
@@ -21,7 +21,7 @@ source venv/bin/activate
 # 4. Install Python Packages
 echo "Installing Python packages..."
 # Note: opencv-python-headless is preferred for server/RPi environments
-pip install flask selenium pytesseract pillow opencv-python-headless webdriver-manager
+pip install flask selenium webdriver-manager
 
 # 5. Install Ngrok (ARM64)
 echo "Installing Ngrok..."

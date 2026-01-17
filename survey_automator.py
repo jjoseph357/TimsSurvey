@@ -15,24 +15,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Optional imports
-try:
-    import pytesseract
-    from PIL import Image
-    OCR_AVAILABLE = True
-except ImportError:
-    OCR_AVAILABLE = False
-    pytesseract = None
-    Image = None
-
-try:
-    import cv2
-    import numpy as np
-    CAMERA_AVAILABLE = True
-except ImportError:
-    CAMERA_AVAILABLE = False
-    cv2 = None
-    np = None
+# Camera/OCR dependencies have been removed per request
 
 class DriverPool:
     _instance = None
@@ -179,83 +162,7 @@ class SurveyAutomator:
             return match.group(0)
         return None
 
-    def clean_receipt(self, image_path):
-        """
-        Advanced image preprocessing for receipts using:
-        1. Green channel extraction
-        2. CLAHE (Contrast Limited Adaptive Histogram Equalization)
-        3. Morphological Black Hat (Background subtraction)
-        4. Adaptive Thresholding
-        """
-        if not CAMERA_AVAILABLE:
-            return None
-
-        try:
-            # 1. Read image
-            img = cv2.imread(image_path)
-            if img is None: return None
-            
-            # 2. Extract Green Channel (usually best for thermal paper)
-            if len(img.shape) == 3:
-                b, g, r = cv2.split(img)
-            else:
-                g = img # Already grayscale
-            
-            # 3. CLAHE
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            enhanced = clahe.apply(g)
-            
-            # 4. Morphological Black Hat (Background subtraction)
-            # Kernel size depends on font size - 15x15 is a safe starting point for receipts
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
-            blackhat = cv2.morphologyEx(enhanced, cv2.MORPH_BLACKHAT, kernel)
-            
-            # 5. Invert to make text black on white again
-            blackhat = cv2.bitwise_not(blackhat)
-            
-            # 6. Adaptive Thresholding
-            binary = cv2.adaptiveThreshold(enhanced, 255, 
-                                        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                        cv2.THRESH_BINARY, 19, 10)
-            return binary
-        except Exception as e:
-            logger.error(f"Error in clean_receipt: {e}")
-            return None
-
-    def scan_image(self, image_path):
-        if not OCR_AVAILABLE:
-            return None, "OCR Not Available"
-
-        custom_config = r'--oem 3 --psm 6'
-        try:
-            # Method 1: Original Image
-            image = Image.open(image_path)
-            text = pytesseract.image_to_string(image, config=custom_config)
-            code = self.extract_code_from_text(text)
-            if code: return code, "Original"
-            
-            if CAMERA_AVAILABLE:
-                # Method 2: Advanced Preprocessing (CLAHE + BlackHat)
-                processed_img = self.clean_receipt(image_path)
-                if processed_img is not None:
-                    text = pytesseract.image_to_string(processed_img, config=custom_config)
-                    code = self.extract_code_from_text(text)
-                    if code: return code, "Advanced Preprocessing"
-
-                # Method 3: Simple Sharpening (Fallback)
-                img_cv = cv2.imread(image_path)
-                if img_cv is not None:
-                    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-                    kernel = np.array([[-1,-1,-1], [-1, 9,-1], [-1,-1,-1]])
-                    sharpened = cv2.filter2D(gray, -1, kernel)
-                    _, sharp_thresh = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                    text = pytesseract.image_to_string(sharp_thresh, config=custom_config)
-                    code = self.extract_code_from_text(text)
-                    if code: return code, "Sharpening"
-                
-        except Exception as e:
-            logger.error(f"Error in scan_image: {e}")
-        return None, "Not Found"
+    # Camera scanning features removed
 
     def find_input_in_context(self):
         """Try to find the survey code input field"""
@@ -275,25 +182,41 @@ class SurveyAutomator:
         return None
 
     def click_element_js(self, element_id):
-        """Robust JavaScript click"""
+        """Robust JavaScript click with improved waiting for RPi5"""
         self.log(f"Clicking {element_id}...")
         try:
-            # Wait for existence
-            WebDriverWait(self.driver, 10).until(
-                lambda d: d.execute_script(f"return document.getElementById('{element_id}') !== null")
+            # 1. Wait for presence
+            WebDriverWait(self.driver, 20).until(
+                EC.presence_of_element_located((By.ID, element_id))
             )
             
-            # Click
-            self.driver.execute_script(f"""
-                var el = document.getElementById('{element_id}');
-                if(el) {{
-                    el.scrollIntoView({{behavior: 'auto', block: 'center'}});
-                    el.click();
-                }} else {{
-                    throw new Error('Element not found: {element_id}');
-                }}
-            """)
-            time.sleep(0.1)
+            # 2. Wait for visibility/interactability (RPi is slow)
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, element_id))
+                )
+            except:
+                self.log(f"Element {element_id} not strictly clickable, trying JS force click anyway")
+
+            # 3. JS Click with retry
+            max_retries = 3
+            for i in range(max_retries):
+                try:
+                    self.driver.execute_script(f"""
+                        var el = document.getElementById('{element_id}');
+                        if(el) {{
+                            el.scrollIntoView({{behavior: 'auto', block: 'center'}});
+                            el.click();
+                        }} else {{
+                            throw new Error('Element not found: {element_id}');
+                        }}
+                    """)
+                    time.sleep(1.0) # Increased dwell time for RPi
+                    return
+                except Exception as retry_err:
+                    if i == max_retries - 1: raise retry_err
+                    time.sleep(1)
+                    
         except Exception as e:
             self.log(f"Error clicking {element_id}: {e}")
             raise
@@ -463,7 +386,7 @@ class SurveyAutomator:
             pass
         return None
 
-    def start_survey(self, code):
+    def start_survey(self, code, on_success=None):
         self.is_running = True
         self.progress = 0
         self.logs = []
@@ -533,6 +456,11 @@ class SurveyAutomator:
                 self.result_image_path = fpath
                 self.progress = 100
                 self.status = "Completed"
+                if on_success:
+                    try:
+                        on_success()
+                    except Exception as cb_err:
+                        self.log(f"Callback error: {cb_err}")
             else:
                 self.status = "Failed during pages"
 

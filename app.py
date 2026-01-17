@@ -11,7 +11,36 @@ from survey_automator import SurveyAutomator
 print("Initializing Flask app...")
 app = Flask(__name__, static_folder='static')
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
+app.config['UPLOAD_FOLDER'] = 'uploads'
+# app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Removed: scan upload not needed
+
+# Counter Logic
+COUNTER_FILE = 'counter.txt'
+SUCCESS_COUNTER = 10
+
+def load_counter():
+    global SUCCESS_COUNTER
+    if os.path.exists(COUNTER_FILE):
+        try:
+            with open(COUNTER_FILE, 'r') as f:
+                val = int(f.read().strip())
+                SUCCESS_COUNTER = val
+        except:
+            pass
+    else:
+        save_counter()
+
+def save_counter():
+    with open(COUNTER_FILE, 'w') as f:
+        f.write(str(SUCCESS_COUNTER))
+
+def increment_counter():
+    global SUCCESS_COUNTER
+    SUCCESS_COUNTER += 1
+    save_counter()
+    print(f"Global Success Counter: {SUCCESS_COUNTER}")
+
+load_counter()
 
 # Ensure directories exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -39,33 +68,7 @@ cleanup_thread.start()
 def index():
     return render_template('index.html')
 
-@app.route('/api/scan', methods=['POST'])
-def scan_image():
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image file provided'}), 400
-    
-    file = request.files['image']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-
-    if file:
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        try:
-            # Create temporary automator for scanning
-            temp_automator = SurveyAutomator()
-            code, method = temp_automator.scan_image(filepath)
-            os.remove(filepath)
-            
-            if code:
-                return jsonify({'success': True, 'code': code, 'method': method})
-            else:
-                return jsonify({'success': False, 'error': 'Could not detect code'}), 404
-                
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+# /api/scan endpoint removed
 
 @app.route('/api/start', methods=['POST'])
 def start_survey():
@@ -81,7 +84,7 @@ def start_survey():
     active_sessions[session_id] = automator
     
     # Run in background thread
-    thread = threading.Thread(target=automator.start_survey, args=(code,))
+    thread = threading.Thread(target=automator.start_survey, args=(code,), kwargs={'on_success': increment_counter})
     thread.daemon = True
     thread.start()
     
@@ -111,7 +114,9 @@ def get_status():
         'logs': automator.logs,
         'image': image_filename,
         'result_code': automator.result_code,
-        'is_running': automator.is_running
+        'result_code': automator.result_code,
+        'is_running': automator.is_running,
+        'global_counter': SUCCESS_COUNTER
     })
 
 @app.route('/api/screenshot/<filename>', methods=['GET'])
