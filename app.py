@@ -98,6 +98,17 @@ def start_survey():
 def get_status():
     session_id = request.args.get('session_id')
     
+    if session_id == 'init_check':
+         return jsonify({
+            'status': 'Idle',
+            'progress': 0,
+            'logs': [],
+            'image': None,
+            'result_code': None,
+            'is_running': False,
+            'global_counter': SUCCESS_COUNTER
+        })
+
     if not session_id or session_id not in active_sessions:
         return jsonify({'error': 'Invalid session'}), 404
         

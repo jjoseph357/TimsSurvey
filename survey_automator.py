@@ -190,13 +190,9 @@ class SurveyAutomator:
                 EC.presence_of_element_located((By.ID, element_id))
             )
             
-            # 2. Wait for visibility/interactability (RPi is slow)
-            try:
-                WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, element_id))
-                )
-            except:
-                self.log(f"Element {element_id} not strictly clickable, trying JS force click anyway")
+            # 2. Direct Force Click (Optimization: Skip clickable check)
+            # User reported standard check times out, so we go straight to JS click
+            pass
 
             # 3. JS Click with retry
             max_retries = 3
