@@ -461,17 +461,20 @@ class SurveyAutomator:
                 raise Exception("Input field not found")
 
             input_field.clear()
-            input_field.send_keys(code)
             
-            # FORCE VALIDATION: Trigger events so the Next button enables
+            # 1. Human-like Typing (Triggers 'input' events)
+            self.log("Typing code...")
+            for char in code:
+                input_field.send_keys(char)
+                time.sleep(0.05) # fast but distinct typing
+            
+            # 2. Force Blur (Click Body) - Triggers validation
             try:
-                input_field.send_keys(Keys.TAB)
-                self.driver.execute_script("arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", input_field)
-                self.driver.execute_script("arguments[0].dispatchEvent(new Event('blur', { bubbles: true }));", input_field)
-            except:
-                pass
+                self.driver.execute_script("arguments[0].blur();", input_field)
+                self.driver.find_element(By.TAG_NAME, "body").click()
+            except: pass
             
-            time.sleep(1) # Wait for UI to update
+            time.sleep(1) # Wait for "Disabled" attribute to be removed
             
             # Try ENTER key first (standard form submission)
             self.log("Sending ENTER key...")
