@@ -561,8 +561,8 @@
                         if (isAtBottom) logsArea.scrollTop = logsArea.scrollHeight;
                     }
 
-                    // Update Counter if available
-                    if (data.global_counter !== undefined) {
+                    // Update Counter if available (and valid)
+                    if (data.global_counter !== undefined && data.global_counter !== null) {
                         counterValue.textContent = data.global_counter;
                     }
 

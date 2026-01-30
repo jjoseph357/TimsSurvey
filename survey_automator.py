@@ -186,7 +186,7 @@ class SurveyAutomator:
         self.log(f"Clicking {element_id}...")
         try:
             # 1. Wait for presence
-            WebDriverWait(self.driver, 20).until(
+            WebDriverWait(self.driver, 40).until(
                 EC.presence_of_element_located((By.ID, element_id))
             )
             
@@ -431,6 +431,7 @@ class SurveyAutomator:
             self.progress = 30
             
             self.click_next()
+            time.sleep(3) # Give RPi extra time for first page transition
             self.progress = 40
 
             # Run pages
