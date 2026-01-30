@@ -261,6 +261,7 @@ class SurveyAutomator:
             pass
 
     def complete_survey_pages(self):
+        try:
             # Page 2: Yes
             self.wait_for_page_load()
             
