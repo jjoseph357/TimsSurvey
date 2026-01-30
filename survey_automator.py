@@ -263,9 +263,31 @@ class SurveyAutomator:
     def complete_survey_pages(self):
         # NOTE: Exception handling is done in start_survey to capture debug info
         
+        # Iframe Safeguard: Ensure we are still in the iframe (Page transitions can lose context)
+        try:
+            if not self.driver.find_elements(By.ID, "QR~QID14~1"):
+                 # Try finding iframe again
+                 frames = self.driver.find_elements(By.TAG_NAME, "iframe")
+                 if frames:
+                     self.driver.switch_to.default_content()
+                     self.driver.switch_to.frame(frames[0])
+                     self.log("Re-switched to iframe for Page 2")
+        except: pass
+
+        
         # Page 2: Yes
         self.wait_for_page_load()
         
+        # DEBUG: Dump Page 2 HTML to see what's wrong with QID14
+        try:
+            import tempfile
+            fname = f"page2_debug_{int(time.time())}.html"
+            fpath = os.path.join(tempfile.gettempdir(), fname)
+            with open(fpath, "w", encoding='utf-8') as f:
+                f.write(self.driver.page_source)
+            self.log(f"DUMPED PAGE 2 HTML to {fpath} - Checking for QID14")
+        except: pass
+
         # DEBUG: Check if we actually moved
         try:
             if self.driver.find_elements(By.ID, "QR~QID9"):
