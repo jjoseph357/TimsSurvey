@@ -5,6 +5,7 @@ import logging
 import re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
@@ -439,6 +440,17 @@ class SurveyAutomator:
 
             input_field.clear()
             input_field.send_keys(code)
+            
+            # FORCE VALIDATION: Trigger events so the Next button enables
+            try:
+                input_field.send_keys(Keys.TAB)
+                self.driver.execute_script("arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", input_field)
+                self.driver.execute_script("arguments[0].dispatchEvent(new Event('blur', { bubbles: true }));", input_field)
+            except:
+                pass
+            
+            time.sleep(1) # Wait for UI to update
+            
             self.progress = 30
             
             self.click_next()
