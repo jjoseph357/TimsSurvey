@@ -459,24 +459,43 @@ class SurveyAutomator:
                 self.driver.find_element(By.TAG_NAME, "body").click()
             except: pass
             
-            time.sleep(0.5) # Reduced wait
+            time.sleep(0.5) 
             
-            # Try ENTER key first (standard form submission)
-            self.log("Sending ENTER key...")
-            input_field.send_keys(Keys.ENTER)
-            time.sleep(1)
-
-            # Check if we moved (Input field should be gone)
-            try:
-                if self.driver.find_elements(By.ID, "QR~QID9"):
-                    self.log("ENTER key didn't work, trying Click Next...")
+            # Retry Loop: Keep hitting Next until we actually verify we moved
+            self.log("Transition Loop: Pressing Next until Page 2 appears...")
+            max_attempts = 10
+            transitioned = False
+            
+            for attempt in range(max_attempts):
+                # 1. Click Next
+                try:
                     self.click_next()
-                    # Wait for transition
-                    WebDriverWait(self.driver, 10).until(
-                        EC.invisibility_of_element_located((By.ID, "QR~QID9"))
-                    )
-            except Exception as e:
-                self.log(f"Transition warning: {e}")
+                except: pass 
+                
+                time.sleep(3) # Wait for page load
+                
+                # 2. Check if we hit Page 2 (QID14 exists) - Best verification
+                if self.driver.find_elements(By.ID, "QR~QID14~1"):
+                    self.log("Transition Verified: Found Page 2 ID")
+                    transitioned = True
+                    break
+                
+                # 3. Check if input field is gone
+                if not self.driver.find_elements(By.ID, "QR~QID9"):
+                    self.log("Transition Verified: Input field gone")
+                    transitioned = True
+                    break
+                    
+                self.log(f"Still on Page 1 (Attempt {attempt+1}/{max_attempts}), checks failed. Retrying validation...")
+                
+                # Re-do validation trigger (Tab/Blur) to ensure button enables
+                try:
+                    input_field.send_keys(Keys.TAB)
+                    self.driver.execute_script("arguments[0].blur();", input_field)
+                except: pass
+
+            if not transitioned:
+                 raise Exception("Failed to verify transition to Page 2 after multiple attempts")
             
             self.progress = 40
 
