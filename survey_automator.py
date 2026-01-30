@@ -474,19 +474,30 @@ class SurveyAutomator:
                 
                 time.sleep(3) # Wait for page load
                 
-                # 2. Check if we hit Page 2 (QID14 exists) - Best verification
-                if self.driver.find_elements(By.ID, "QR~QID14~1"):
-                    self.log("Transition Verified: Found Page 2 ID")
-                    transitioned = True
-                    break
-                
-                # 3. Check if input field is gone
-                if not self.driver.find_elements(By.ID, "QR~QID9"):
-                    self.log("Transition Verified: Input field gone")
-                    transitioned = True
-                    break
+                # 2. Check if we hit Page 2 - Logic: Look for specific text
+                try:
+                    # Check for "Is your feedback related to" OR the next button ID
+                    body_text = self.driver.find_element(By.TAG_NAME, "body").text
                     
-                self.log(f"Still on Page 1 (Attempt {attempt+1}/{max_attempts}), checks failed. Retrying validation...")
+                    if "Is your feedback related to" in body_text:
+                        self.log("Transition Verified: Found Page 2 Text")
+                        transitioned = True
+                        break
+                    
+                    if self.driver.find_elements(By.ID, "QR~QID14~1"):
+                        self.log("Transition Verified: Found Page 2 ID")
+                        transitioned = True
+                        break
+
+                except: pass
+                
+                # Check for error messages on Page 1
+                try:
+                    if "Error" in body_text or "Invalid" in body_text:
+                        raise Exception("Survey rejected the code (Invalid/Used).")
+                except: pass
+                    
+                self.log(f"Still on Page 1 (Attempt {attempt+1}/{max_attempts})...")
                 
                 # Re-do validation trigger (Tab/Blur) to ensure button enables
                 try:
