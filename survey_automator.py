@@ -259,130 +259,127 @@ class SurveyAutomator:
             time.sleep(0.2)
         except:
             pass
-
     def complete_survey_pages(self):
+        # NOTE: Exception handling is done in start_survey to capture debug info
+        
+        # Page 2: Yes
+        self.wait_for_page_load()
+        
+        # DEBUG: Check if we actually moved
         try:
-            # Page 2: Yes
-            self.wait_for_page_load()
-            
-            # DEBUG: Check if we actually moved
-            try:
-                if self.driver.find_elements(By.ID, "QR~QID9"):
-                   self.log("STUCK ON PAGE 1: Input field still visible. Code might be invalid.")
-                   # Check for error message
-                   body_text = self.driver.find_element(By.TAG_NAME, "body").text
-                   if "Error" in body_text or "Invalid" in body_text or "check the code" in body_text:
-                       raise Exception("Survey rejected the code (Invalid/Used).")
-                   raise Exception("Failed to navigate from Start Page")
-            except Exception as nav_err:
-                if "Survey rejected" in str(nav_err): raise nav_err
-                # If finding the element failed, we might have moved? Continue.
-            
-            self.click_element_js("QR~QID14~1")
-            self.click_next()
-            self.progress = 50
+            if self.driver.find_elements(By.ID, "QR~QID9"):
+                self.log("STUCK ON PAGE 1: Input field still visible. Code might be invalid.")
+                # Check for error message
+                body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                if "Error" in body_text or "Invalid" in body_text or "check the code" in body_text:
+                    raise Exception("Survey rejected the code (Invalid/Used).")
+                raise Exception("Failed to navigate from Start Page")
+        except Exception as nav_err:
+            if "Survey rejected" in str(nav_err): raise nav_err
+            # If finding the element failed, we might have moved? Continue.
+        
+        self.click_element_js("QR~QID14~1")
+        self.click_next()
+        self.progress = 50
 
-            # Page 3: Highly Satisfied
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID15~4")
-            self.click_next()
-            self.progress = 55
+        # Page 3: Highly Satisfied
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID15~4")
+        self.click_next()
+        self.progress = 55
 
-            # Page 4: Feedback
-            self.wait_for_page_load()
+        # Page 4: Feedback
+        self.wait_for_page_load()
+        try:
+            textarea = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, "QR~QID45"))
+            )
+            textarea.clear()
+            textarea.send_keys("Great service")
+        except:
+            self.log("Feedback area not found, skipping")
+        self.click_next()
+        self.progress = 60
+
+        # Page 5: Dine-In
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID18~5")
+        self.click_next()
+        self.progress = 65
+
+        # Page 6: Front counter
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID19~5")
+        self.click_next()
+        self.progress = 70
+
+        # Page 7: Beverage only
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID20~5")
+        self.click_next()
+        self.progress = 72
+
+        # Page 8: Matrix (Highly Satisfied)
+        self.wait_for_page_load()
+        ids = ["QR~QID23~4~1", "QR~QID23~6~1", "QR~QID23~7~1", 
+                "QR~QID23~8~1", "QR~QID23~10~1", "QR~QID23~11~1"]
+        for eid in ids:
             try:
-                textarea = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "QR~QID45"))
-                )
-                textarea.clear()
-                textarea.send_keys("Great service")
+                self.click_element_js(eid)
             except:
-                self.log("Feedback area not found, skipping")
-            self.click_next()
-            self.progress = 60
+                pass # Optional rows
+        self.click_next()
+        self.progress = 75
 
-            # Page 5: Dine-In
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID18~5")
-            self.click_next()
-            self.progress = 65
+        # Page 9: Empty/Next
+        self.wait_for_page_load()
+        self.click_next()
+        self.progress = 78
 
-            # Page 6: Front counter
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID19~5")
-            self.click_next()
-            self.progress = 70
+        # Page 10: No
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID151~3")
+        self.click_next()
+        self.progress = 80
 
-            # Page 7: Beverage only
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID20~5")
-            self.click_next()
-            self.progress = 72
+        # Page 11: Highly Likely x2
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID44~1~1")
+        self.click_element_js("QR~QID44~3~1")
+        self.click_next()
+        self.progress = 83
 
-            # Page 8: Matrix (Highly Satisfied)
-            self.wait_for_page_load()
-            ids = ["QR~QID23~4~1", "QR~QID23~6~1", "QR~QID23~7~1", 
-                   "QR~QID23~8~1", "QR~QID23~10~1", "QR~QID23~11~1"]
-            for eid in ids:
-                try:
-                    self.click_element_js(eid)
-                except:
-                    pass # Optional rows
-            self.click_next()
-            self.progress = 75
+        # Page 12: No
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID37~2")
+        self.click_next()
+        self.progress = 85
 
-            # Page 9: Empty/Next
-            self.wait_for_page_load()
-            self.click_next()
-            self.progress = 78
+        # Page 13: No
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID134~2")
+        self.click_next()
+        self.progress = 87
 
-            # Page 10: No
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID151~3")
-            self.click_next()
-            self.progress = 80
+        # Page 14: Yes
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID150~2")
+        self.click_next()
+        self.progress = 90
 
-            # Page 11: Highly Likely x2
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID44~1~1")
-            self.click_element_js("QR~QID44~3~1")
-            self.click_next()
-            self.progress = 83
+        # Page 15: Something else
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID48~5")
+        self.click_next()
+        self.progress = 93
 
-            # Page 12: No
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID37~2")
-            self.click_next()
-            self.progress = 85
+        # Page 16: No
+        self.wait_for_page_load()
+        self.click_element_js("QR~QID68~2")
+        self.click_next()
+        self.progress = 95
 
-            # Page 13: No
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID134~2")
-            self.click_next()
-            self.progress = 87
-
-            # Page 14: Yes
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID150~2")
-            self.click_next()
-            self.progress = 90
-
-            # Page 15: Something else
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID48~5")
-            self.click_next()
-            self.progress = 93
-
-            # Page 16: No
-            self.wait_for_page_load()
-            self.click_element_js("QR~QID68~2")
-            self.click_next()
-            self.progress = 95
-
-            return True
-        except Exception as e:
-            self.log(f"Survey Error: {e}")
-            return False
+        return True
 
     def extract_validation_code(self):
         try:
