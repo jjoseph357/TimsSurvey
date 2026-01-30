@@ -30,6 +30,8 @@ if %errorlevel% neq 0 (
 
 REM 4. Run the App
 echo.
+echo [System] Starting Ngrok Tunnel...
+start "Ngrok Tunnel" ngrok http 5001
 echo [System] Starting App on Port 5001...
 echo [System] Access local: http://localhost:5001
 echo.
