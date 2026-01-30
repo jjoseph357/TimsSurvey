@@ -451,10 +451,23 @@ class SurveyAutomator:
             
             time.sleep(1) # Wait for UI to update
             
-            self.progress = 30
+            # Try ENTER key first (standard form submission)
+            self.log("Sending ENTER key...")
+            input_field.send_keys(Keys.ENTER)
+            time.sleep(2)
+
+            # Check if we moved (Input field should be gone)
+            try:
+                if self.driver.find_elements(By.ID, "QR~QID9"):
+                    self.log("ENTER key didn't work, trying Click Next...")
+                    self.click_next()
+                    # Wait for transition
+                    WebDriverWait(self.driver, 10).until(
+                        EC.invisibility_of_element_located((By.ID, "QR~QID9"))
+                    )
+            except Exception as e:
+                self.log(f"Transition warning: {e}")
             
-            self.click_next()
-            time.sleep(3) # Give RPi extra time for first page transition
             self.progress = 40
 
             # Run pages
