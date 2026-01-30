@@ -187,7 +187,7 @@ class SurveyAutomator:
         self.log(f"Clicking {element_id}...")
         try:
             # 1. Wait for presence
-            WebDriverWait(self.driver, 40).until(
+            WebDriverWait(self.driver, 15).until(
                 EC.presence_of_element_located((By.ID, element_id))
             )
             
@@ -278,29 +278,14 @@ class SurveyAutomator:
         # Page 2: Yes
         self.wait_for_page_load()
         
-        # DEBUG: Dump Page 2 HTML to see what's wrong with QID14
+        # FAIL FAST: Check for error message on page 2
         try:
-            import tempfile
-            fname = f"page2_debug_{int(time.time())}.html"
-            fpath = os.path.join(tempfile.gettempdir(), fname)
-            with open(fpath, "w", encoding='utf-8') as f:
-                f.write(self.driver.page_source)
-            self.log(f"DUMPED PAGE 2 HTML to {fpath} - Checking for QID14")
+            body = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Error" in body or "Invalid" in body or "System Error" in body:
+                self.log(f"Detected Error on Page: {body[:100]}")
+                return False
         except: pass
 
-        # DEBUG: Check if we actually moved
-        try:
-            if self.driver.find_elements(By.ID, "QR~QID9"):
-                self.log("STUCK ON PAGE 1: Input field still visible. Code might be invalid.")
-                # Check for error message
-                body_text = self.driver.find_element(By.TAG_NAME, "body").text
-                if "Error" in body_text or "Invalid" in body_text or "check the code" in body_text:
-                    raise Exception("Survey rejected the code (Invalid/Used).")
-                raise Exception("Failed to navigate from Start Page")
-        except Exception as nav_err:
-            if "Survey rejected" in str(nav_err): raise nav_err
-            # If finding the element failed, we might have moved? Continue.
-        
         self.click_element_js("QR~QID14~1")
         self.click_next()
         self.progress = 50
@@ -466,7 +451,7 @@ class SurveyAutomator:
             self.log("Typing code...")
             for char in code:
                 input_field.send_keys(char)
-                time.sleep(0.05) # fast but distinct typing
+                time.sleep(0.02) # Optimized for speed
             
             # 2. Force Blur (Click Body) - Triggers validation
             try:
@@ -474,12 +459,12 @@ class SurveyAutomator:
                 self.driver.find_element(By.TAG_NAME, "body").click()
             except: pass
             
-            time.sleep(1) # Wait for "Disabled" attribute to be removed
+            time.sleep(0.5) # Reduced wait
             
             # Try ENTER key first (standard form submission)
             self.log("Sending ENTER key...")
             input_field.send_keys(Keys.ENTER)
-            time.sleep(2)
+            time.sleep(1)
 
             # Check if we moved (Input field should be gone)
             try:
