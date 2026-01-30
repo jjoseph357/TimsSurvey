@@ -261,9 +261,22 @@ class SurveyAutomator:
             pass
 
     def complete_survey_pages(self):
-        try:
             # Page 2: Yes
             self.wait_for_page_load()
+            
+            # DEBUG: Check if we actually moved
+            try:
+                if self.driver.find_elements(By.ID, "QR~QID9"):
+                   self.log("STUCK ON PAGE 1: Input field still visible. Code might be invalid.")
+                   # Check for error message
+                   body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                   if "Error" in body_text or "Invalid" in body_text or "check the code" in body_text:
+                       raise Exception("Survey rejected the code (Invalid/Used).")
+                   raise Exception("Failed to navigate from Start Page")
+            except Exception as nav_err:
+                if "Survey rejected" in str(nav_err): raise nav_err
+                # If finding the element failed, we might have moved? Continue.
+            
             self.click_element_js("QR~QID14~1")
             self.click_next()
             self.progress = 50
@@ -464,14 +477,29 @@ class SurveyAutomator:
         except Exception as e:
             self.log(f"Critical Error: {e}")
             self.status = "Error"
-            # Try debug screenshot
+            
+            # Enhanced Debugging
             try:
-                import tempfile
-                fname = f"error_{int(time.time())}.png"
-                fpath = os.path.join(tempfile.gettempdir(), fname)
-                self.driver.save_screenshot(fpath)
-                self.result_image_path = fpath # Show error screenshot
-            except: pass
+                if self.driver:
+                    self.log(f"Current URL: {self.driver.current_url}")
+                    self.log(f"Page Title: {self.driver.title}")
+                    
+                    import tempfile
+                    # Screenshot
+                    fname_img = f"error_{int(time.time())}.png"
+                    fpath_img = os.path.join(tempfile.gettempdir(), fname_img)
+                    self.driver.save_screenshot(fpath_img)
+                    self.result_image_path = fpath_img 
+                    
+                    # HTML Dump
+                    fname_html = f"error_{int(time.time())}.html"
+                    fpath_html = os.path.join(tempfile.gettempdir(), fname_html)
+                    with open(fpath_html, "w", encoding='utf-8') as f:
+                        f.write(self.driver.page_source)
+                    self.log(f"Saved debug HTML to {fpath_html}")
+            except Exception as debug_err:
+                self.log(f"Failed to save debug info: {debug_err}")
+            
             
         finally:
             self.is_running = False
