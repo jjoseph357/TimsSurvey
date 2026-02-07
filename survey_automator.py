@@ -96,7 +96,9 @@ class DriverPool:
         
         # RPi/Linux specific: Check for system chromedriver
         import platform
-        if platform.system() == 'Linux':
+        system_os = platform.system()
+        
+        if system_os == 'Linux':
             options.add_argument('--headless=new') # Optional: Run headless on Pi
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
@@ -111,7 +113,45 @@ class DriverPool:
                 except:
                     # Fallback for RPi if manager fails
                     service = Service("/usr/lib/chromium-browser/chromedriver")
-        else:
+        
+        else: # Windows / Mac
+            # Windows: Explicitly look for Chrome binary if not found in PATH
+            if system_os == 'Windows':
+                possible_paths = [
+                    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                    os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe")
+                ]
+                
+                # Try Registry
+                try:
+                    import winreg
+                    reg_paths = [
+                        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe"),
+                        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe")
+                    ]
+                    for root, key_path in reg_paths:
+                        try:
+                            with winreg.OpenKey(root, key_path) as key:
+                                path, _ = winreg.QueryValueEx(key, "")
+                                if path: possible_paths.append(path)
+                        except: pass
+                except ImportError: pass
+
+                binary_found = False
+                for p in possible_paths:
+                    if os.path.exists(p):
+                        logger.info(f"Found Chrome binary at: {p}")
+                        options.binary_location = p
+                        binary_found = True
+                        break
+                
+                if not binary_found:
+                    logger.error("CRITICAL: Google Chrome binary NOT found in Registry or standard paths.")
+                    logger.error("Please install Google Chrome from https://www.google.com/chrome/")
+                    logger.error("If installed, please add 'chrome.exe' to your System PATH.")
+                    # Let it fail naturally if we can't find it, but the log helps.
+
             service = Service(ChromeDriverManager().install())
 
         driver = webdriver.Chrome(service=service, options=options)
@@ -472,24 +512,29 @@ class SurveyAutomator:
                     self.click_next()
                 except: pass 
                 
-                time.sleep(3) # Wait for page load
+                # POLL for page load (Checking every 0.5s up to 3s)
+                page_loaded = False
+                for _ in range(6):
+                    time.sleep(0.5)
+                    try:
+                        # Check for "Is your feedback related to" OR the next button ID
+                        body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                        
+                        if "Is your feedback related to" in body_text:
+                            self.log("Transition Verified: Found Page 2 Text")
+                            transitioned = True
+                            page_loaded = True
+                            break
+                        
+                        if self.driver.find_elements(By.ID, "QR~QID14~1"):
+                            self.log("Transition Verified: Found Page 2 ID")
+                            transitioned = True
+                            page_loaded = True
+                            break
+                    except: pass
                 
-                # 2. Check if we hit Page 2 - Logic: Look for specific text
-                try:
-                    # Check for "Is your feedback related to" OR the next button ID
-                    body_text = self.driver.find_element(By.TAG_NAME, "body").text
-                    
-                    if "Is your feedback related to" in body_text:
-                        self.log("Transition Verified: Found Page 2 Text")
-                        transitioned = True
-                        break
-                    
-                    if self.driver.find_elements(By.ID, "QR~QID14~1"):
-                        self.log("Transition Verified: Found Page 2 ID")
-                        transitioned = True
-                        break
-
-                except: pass
+                if transitioned:
+                    break
                 
                 # Check for error messages on Page 1
                 try:
