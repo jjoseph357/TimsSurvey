@@ -223,56 +223,60 @@ class SurveyAutomator:
         return None
 
     def wait_for_next_page(self, element_id, timeout=10):
-        """Poll every 100ms until the expected element appears on the next page."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                el = self.driver.find_element(By.ID, element_id)
-                if el.is_displayed():
-                    return True
-            except:
-                pass
-            time.sleep(0.1)
-        # Fallback: just check readyState
+        """Wait for element using in-browser JS polling — ONE Selenium call total."""
         try:
-            WebDriverWait(self.driver, 3).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
+            self.driver.execute_async_script(f"""
+                var callback = arguments[arguments.length - 1];
+                var interval = setInterval(function() {{
+                    if (document.getElementById('{element_id}')) {{
+                        clearInterval(interval);
+                        callback(true);
+                    }}
+                }}, 50);
+                setTimeout(function() {{
+                    clearInterval(interval);
+                    callback(false);
+                }}, {int(timeout * 1000)});
+            """)
         except:
             pass
-        return False
+
+    def wait_for_element_gone(self, element_id, timeout=10):
+        """Wait for element to disappear using in-browser JS polling — ONE Selenium call total."""
+        try:
+            self.driver.execute_async_script(f"""
+                var callback = arguments[arguments.length - 1];
+                var interval = setInterval(function() {{
+                    if (!document.getElementById('{element_id}')) {{
+                        clearInterval(interval);
+                        callback(true);
+                    }}
+                }}, 50);
+                setTimeout(function() {{
+                    clearInterval(interval);
+                    callback(false);
+                }}, {int(timeout * 1000)});
+            """)
+        except:
+            pass
 
     def click_and_next(self, element_id):
-        """Click an element AND NextButton in a single JS execution — minimizes Selenium round-trips."""
+        """Click an element AND NextButton in a single JS execution."""
         self.log(f"Clicking {element_id} + Next...")
-        max_retries = 3
-        for i in range(max_retries):
-            try:
-                self.driver.execute_script(f"""
-                    var el = document.getElementById('{element_id}');
-                    if(el) {{ el.scrollIntoView({{behavior: 'auto', block: 'center'}}); el.click(); }}
-                    var btn = document.getElementById('NextButton');
-                    if(btn) {{ btn.click(); }}
-                """)
-                return
-            except Exception as retry_err:
-                if i == max_retries - 1: raise retry_err
-                time.sleep(0.3)
+        self.driver.execute_script(f"""
+            var el = document.getElementById('{element_id}');
+            if(el) {{ el.scrollIntoView({{behavior: 'auto', block: 'center'}}); el.click(); }}
+            var btn = document.getElementById('NextButton');
+            if(btn) {{ btn.click(); }}
+        """)
 
     def click_next(self):
-        """Click NextButton only — for pages where element interaction is separate."""
+        """Click NextButton only."""
         self.log("Clicking Next...")
-        max_retries = 3
-        for i in range(max_retries):
-            try:
-                self.driver.execute_script("""
-                    var btn = document.getElementById('NextButton');
-                    if(btn) { btn.scrollIntoView({behavior: 'auto', block: 'center'}); btn.click(); }
-                """)
-                return
-            except Exception as e:
-                if i == max_retries - 1: raise e
-                time.sleep(0.3)
+        self.driver.execute_script("""
+            var btn = document.getElementById('NextButton');
+            if(btn) { btn.scrollIntoView({behavior: 'auto', block: 'center'}); btn.click(); }
+        """)
 
     def click_all_and_next(self, element_ids):
         """Click multiple elements AND NextButton in a single JS execution."""
@@ -287,18 +291,6 @@ class SurveyAutomator:
             var btn = document.getElementById('NextButton');
             if(btn) {{ btn.click(); }}
         """)
-
-    def wait_for_element_gone(self, element_id, timeout=10):
-        """Poll until an element disappears — used to detect page transitions."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                if not self.driver.find_elements(By.ID, element_id):
-                    return True
-            except:
-                return True
-            time.sleep(0.1)
-        return False
 
     def complete_survey_pages(self):
         # NOTE: Exception handling is done in start_survey to capture debug info
@@ -442,6 +434,9 @@ class SurveyAutomator:
             self.log("System busy: No browsers available")
             self.is_running = False
             return
+
+        # Set script timeout for execute_async_script calls
+        self.driver.set_script_timeout(15)
 
         try:
             self.log(f"Starting survey for code: {code}")
