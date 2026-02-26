@@ -222,20 +222,36 @@ class SurveyAutomator:
             except: continue
         return None
 
+    def wait_for_next_page(self, element_id, timeout=10):
+        """Poll every 100ms until the expected element appears on the next page."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                el = self.driver.find_element(By.ID, element_id)
+                if el.is_displayed():
+                    return True
+            except:
+                pass
+            time.sleep(0.1)
+        # Fallback: just check readyState
+        try:
+            WebDriverWait(self.driver, 3).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+        except:
+            pass
+        return False
+
     def click_element_js(self, element_id):
-        """Robust JavaScript click with improved waiting for RPi5"""
+        """Robust JavaScript click — no post-click sleep."""
         self.log(f"Clicking {element_id}...")
         try:
             # 1. Wait for presence
             WebDriverWait(self.driver, 15).until(
                 EC.presence_of_element_located((By.ID, element_id))
             )
-            
-            # 2. Direct Force Click (Optimization: Skip clickable check)
-            # User reported standard check times out, so we go straight to JS click
-            pass
 
-            # 3. JS Click with retry
+            # 2. JS Click with retry
             max_retries = 3
             for i in range(max_retries):
                 try:
@@ -248,20 +264,18 @@ class SurveyAutomator:
                             throw new Error('Element not found: {element_id}');
                         }}
                     """)
-                    time.sleep(1.0) # Increased dwell time for RPi
-                    return
+                    return  # No post-click sleep — JS click is synchronous
                 except Exception as retry_err:
                     if i == max_retries - 1: raise retry_err
-                    time.sleep(1)
+                    time.sleep(0.3)
                     
         except Exception as e:
             self.log(f"Error clicking {element_id}: {e}")
             raise
 
     def click_next(self):
-        """Click NextButton with retry logic"""
+        """Click NextButton with retry logic — adaptive post-click wait."""
         self.log("Clicking Next...")
-        # time.sleep(1) # Removed initial delay
         
         max_retries = 3
         for i in range(max_retries):
@@ -270,7 +284,7 @@ class SurveyAutomator:
                 exists = self.driver.execute_script("return document.getElementById('NextButton') !== null")
                 if not exists:
                     self.log("NextButton not found in DOM")
-                    time.sleep(1)
+                    time.sleep(0.5)
                     continue
 
                 # Click
@@ -280,15 +294,23 @@ class SurveyAutomator:
                     btn.click();
                 """)
                 
-                # Wait for page load/transition
-                time.sleep(0.5)
-                
-                # Verify navigation (simple check: did URL change or element disappear?)
-                # For now, just assuming success if no error, but we can be smarter
+                # Adaptive wait: poll until NextButton disappears or page changes
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    try:
+                        gone = self.driver.execute_script(
+                            "return document.getElementById('NextButton') === null || "
+                            "document.readyState !== 'complete'"
+                        )
+                        if gone:
+                            break
+                    except:
+                        break  # Page is navigating
+                    time.sleep(0.1)
                 return
             except Exception as e:
                 self.log(f"Retry {i+1} failed: {e}")
-                time.sleep(2)
+                time.sleep(0.5)
         
         raise Exception("Failed to click NextButton after retries")
 
@@ -297,9 +319,20 @@ class SurveyAutomator:
             WebDriverWait(self.driver, 15).until(
                 lambda d: d.execute_script("return document.readyState") == "complete"
             )
-            time.sleep(0.2)
         except:
             pass
+    def click_all_js(self, element_ids):
+        """Click multiple elements in a single JS call — for matrix pages."""
+        self.log(f"Batch clicking {len(element_ids)} elements...")
+        ids_js = ','.join(f"'{eid}'" for eid in element_ids)
+        self.driver.execute_script(f"""
+            var ids = [{ids_js}];
+            ids.forEach(function(id) {{
+                var el = document.getElementById(id);
+                if(el) {{ el.scrollIntoView({{behavior: 'auto', block: 'center'}}); el.click(); }}
+            }});
+        """)
+
     def complete_survey_pages(self):
         # NOTE: Exception handling is done in start_survey to capture debug info
         
@@ -316,7 +349,7 @@ class SurveyAutomator:
 
         
         # Page 2: Yes
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID14~1")
         
         # FAIL FAST: Check for error message on page 2
         try:
@@ -331,98 +364,97 @@ class SurveyAutomator:
         self.progress = 50
 
         # Page 3: Highly Satisfied
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID15~4")
         self.click_element_js("QR~QID15~4")
         self.click_next()
         self.progress = 55
 
         # Page 4: Feedback
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID45")
         try:
-            textarea = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "QR~QID45"))
-            )
+            textarea = self.driver.find_element(By.ID, "QR~QID45")
             textarea.clear()
-            textarea.send_keys("Great service")
+            self.driver.execute_script(
+                "arguments[0].value = 'Great service'; "
+                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));",
+                textarea
+            )
         except:
             self.log("Feedback area not found, skipping")
         self.click_next()
         self.progress = 60
 
         # Page 5: Dine-In
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID18~5")
         self.click_element_js("QR~QID18~5")
         self.click_next()
         self.progress = 65
 
         # Page 6: Front counter
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID19~5")
         self.click_element_js("QR~QID19~5")
         self.click_next()
         self.progress = 70
 
         # Page 7: Beverage only
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID20~5")
         self.click_element_js("QR~QID20~5")
         self.click_next()
         self.progress = 72
 
-        # Page 8: Matrix (Highly Satisfied)
-        self.wait_for_page_load()
-        ids = ["QR~QID23~4~1", "QR~QID23~6~1", "QR~QID23~7~1", 
-                "QR~QID23~8~1", "QR~QID23~10~1", "QR~QID23~11~1"]
-        for eid in ids:
-            try:
-                self.click_element_js(eid)
-            except:
-                pass # Optional rows
+        # Page 8: Matrix (Highly Satisfied) — batch click all 6 at once
+        self.wait_for_next_page("QR~QID23~4~1")
+        self.click_all_js([
+            "QR~QID23~4~1", "QR~QID23~6~1", "QR~QID23~7~1",
+            "QR~QID23~8~1", "QR~QID23~10~1", "QR~QID23~11~1"
+        ])
         self.click_next()
         self.progress = 75
 
         # Page 9: Empty/Next
-        self.wait_for_page_load()
+        self.wait_for_next_page("NextButton")
         self.click_next()
         self.progress = 78
 
         # Page 10: No
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID151~3")
         self.click_element_js("QR~QID151~3")
         self.click_next()
         self.progress = 80
 
         # Page 11: Highly Likely x2
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID44~1~1")
         self.click_element_js("QR~QID44~1~1")
         self.click_element_js("QR~QID44~3~1")
         self.click_next()
         self.progress = 83
 
         # Page 12: No
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID37~2")
         self.click_element_js("QR~QID37~2")
         self.click_next()
         self.progress = 85
 
         # Page 13: No
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID134~2")
         self.click_element_js("QR~QID134~2")
         self.click_next()
         self.progress = 87
 
         # Page 14: Yes
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID150~2")
         self.click_element_js("QR~QID150~2")
         self.click_next()
         self.progress = 90
 
         # Page 15: Something else
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID48~5")
         self.click_element_js("QR~QID48~5")
         self.click_next()
         self.progress = 93
 
         # Page 16: No
-        self.wait_for_page_load()
+        self.wait_for_next_page("QR~QID68~2")
         self.click_element_js("QR~QID68~2")
         self.click_next()
         self.progress = 95
@@ -430,15 +462,18 @@ class SurveyAutomator:
         return True
 
     def extract_validation_code(self):
-        try:
-            time.sleep(2)
-            text = self.driver.find_element(By.TAG_NAME, "body").text
-            match = re.search(r'Validation Code:?\s*(\d+)', text, re.IGNORECASE)
-            if match: return match.group(1)
-            match = re.search(r'\b\d{7}\b', text)
-            if match: return match.group(0)
-        except:
-            pass
+        """Poll for validation code every 200ms, up to 5s."""
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                text = self.driver.find_element(By.TAG_NAME, "body").text
+                match = re.search(r'Validation Code:?\s*(\d+)', text, re.IGNORECASE)
+                if match: return match.group(1)
+                match = re.search(r'\b\d{7}\b', text)
+                if match: return match.group(0)
+            except:
+                pass
+            time.sleep(0.2)
         return None
 
     def start_survey(self, code, on_success=None):
@@ -463,7 +498,6 @@ class SurveyAutomator:
             
             # Wait for body
             WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            time.sleep(0.5)
 
             # Iframe check
             try:
@@ -487,23 +521,38 @@ class SurveyAutomator:
 
             input_field.clear()
             
-            # 1. Human-like Typing (Triggers 'input' events)
-            self.log("Typing code...")
-            for char in code:
-                input_field.send_keys(char)
-                time.sleep(0.02) # Optimized for speed
+            # 1. Fast JS code entry with event dispatch
+            self.log("Entering code via JS...")
+            try:
+                self.driver.execute_script("""
+                    var el = arguments[0];
+                    var code = arguments[1];
+                    el.focus();
+                    el.value = code;
+                    el.dispatchEvent(new Event('input', {bubbles: true}));
+                    el.dispatchEvent(new Event('change', {bubbles: true}));
+                    el.blur();
+                """, input_field, code)
+            except:
+                # Fallback: char-by-char typing
+                self.log("JS entry failed, falling back to typing...")
+                for char in code:
+                    input_field.send_keys(char)
+                    time.sleep(0.02)
+                try:
+                    self.driver.execute_script("arguments[0].blur();", input_field)
+                except: pass
             
             # 2. Force Blur (Click Body) - Triggers validation
             try:
-                self.driver.execute_script("arguments[0].blur();", input_field)
                 self.driver.find_element(By.TAG_NAME, "body").click()
             except: pass
             
-            time.sleep(0.5) 
+            time.sleep(0.2) 
             
             # Retry Loop: Keep hitting Next until we actually verify we moved
             self.log("Transition Loop: Pressing Next until Page 2 appears...")
-            max_attempts = 10
+            max_attempts = 5
             transitioned = False
             
             for attempt in range(max_attempts):
@@ -512,24 +561,20 @@ class SurveyAutomator:
                     self.click_next()
                 except: pass 
                 
-                # POLL for page load (Checking every 0.5s up to 3s)
-                page_loaded = False
-                for _ in range(6):
-                    time.sleep(0.5)
+                # POLL for page load (Checking every 200ms up to 2s)
+                for _ in range(10):
+                    time.sleep(0.2)
                     try:
-                        # Check for "Is your feedback related to" OR the next button ID
+                        if self.driver.find_elements(By.ID, "QR~QID14~1"):
+                            self.log("Transition Verified: Found Page 2 ID")
+                            transitioned = True
+                            break
+                        
                         body_text = self.driver.find_element(By.TAG_NAME, "body").text
                         
                         if "Is your feedback related to" in body_text:
                             self.log("Transition Verified: Found Page 2 Text")
                             transitioned = True
-                            page_loaded = True
-                            break
-                        
-                        if self.driver.find_elements(By.ID, "QR~QID14~1"):
-                            self.log("Transition Verified: Found Page 2 ID")
-                            transitioned = True
-                            page_loaded = True
                             break
                     except: pass
                 
@@ -538,9 +583,12 @@ class SurveyAutomator:
                 
                 # Check for error messages on Page 1
                 try:
+                    body_text = self.driver.find_element(By.TAG_NAME, "body").text
                     if "Error" in body_text or "Invalid" in body_text:
                         raise Exception("Survey rejected the code (Invalid/Used).")
-                except: pass
+                except NameError: pass
+                except Exception as e:
+                    if "rejected" in str(e): raise
                     
                 self.log(f"Still on Page 1 (Attempt {attempt+1}/{max_attempts})...")
                 
