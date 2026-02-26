@@ -274,7 +274,7 @@ class SurveyAutomator:
             raise
 
     def click_next(self):
-        """Click NextButton with retry logic — adaptive post-click wait."""
+        """Click NextButton — no post-click wait (wait_for_next_page handles readiness)."""
         self.log("Clicking Next...")
         
         max_retries = 3
@@ -287,26 +287,12 @@ class SurveyAutomator:
                     time.sleep(0.5)
                     continue
 
-                # Click
+                # Click and return immediately — wait_for_next_page() handles page readiness
                 self.driver.execute_script("""
                     var btn = document.getElementById('NextButton');
                     btn.scrollIntoView({behavior: 'auto', block: 'center'});
                     btn.click();
                 """)
-                
-                # Adaptive wait: poll until NextButton disappears or page changes
-                deadline = time.time() + 5
-                while time.time() < deadline:
-                    try:
-                        gone = self.driver.execute_script(
-                            "return document.getElementById('NextButton') === null || "
-                            "document.readyState !== 'complete'"
-                        )
-                        if gone:
-                            break
-                    except:
-                        break  # Page is navigating
-                    time.sleep(0.1)
                 return
             except Exception as e:
                 self.log(f"Retry {i+1} failed: {e}")
