@@ -242,74 +242,41 @@ class SurveyAutomator:
             pass
         return False
 
-    def click_element_js(self, element_id):
-        """Robust JavaScript click — no post-click sleep."""
-        self.log(f"Clicking {element_id}...")
-        try:
-            # 1. Wait for presence
-            WebDriverWait(self.driver, 15).until(
-                EC.presence_of_element_located((By.ID, element_id))
-            )
-
-            # 2. JS Click with retry
-            max_retries = 3
-            for i in range(max_retries):
-                try:
-                    self.driver.execute_script(f"""
-                        var el = document.getElementById('{element_id}');
-                        if(el) {{
-                            el.scrollIntoView({{behavior: 'auto', block: 'center'}});
-                            el.click();
-                        }} else {{
-                            throw new Error('Element not found: {element_id}');
-                        }}
-                    """)
-                    return  # No post-click sleep — JS click is synchronous
-                except Exception as retry_err:
-                    if i == max_retries - 1: raise retry_err
-                    time.sleep(0.3)
-                    
-        except Exception as e:
-            self.log(f"Error clicking {element_id}: {e}")
-            raise
-
-    def click_next(self):
-        """Click NextButton — no post-click wait (wait_for_next_page handles readiness)."""
-        self.log("Clicking Next...")
-        
+    def click_and_next(self, element_id):
+        """Click an element AND NextButton in a single JS execution — minimizes Selenium round-trips."""
+        self.log(f"Clicking {element_id} + Next...")
         max_retries = 3
         for i in range(max_retries):
             try:
-                # Check if button exists
-                exists = self.driver.execute_script("return document.getElementById('NextButton') !== null")
-                if not exists:
-                    self.log("NextButton not found in DOM")
-                    time.sleep(0.5)
-                    continue
+                self.driver.execute_script(f"""
+                    var el = document.getElementById('{element_id}');
+                    if(el) {{ el.scrollIntoView({{behavior: 'auto', block: 'center'}}); el.click(); }}
+                    var btn = document.getElementById('NextButton');
+                    if(btn) {{ btn.click(); }}
+                """)
+                return
+            except Exception as retry_err:
+                if i == max_retries - 1: raise retry_err
+                time.sleep(0.3)
 
-                # Click and return immediately — wait_for_next_page() handles page readiness
+    def click_next(self):
+        """Click NextButton only — for pages where element interaction is separate."""
+        self.log("Clicking Next...")
+        max_retries = 3
+        for i in range(max_retries):
+            try:
                 self.driver.execute_script("""
                     var btn = document.getElementById('NextButton');
-                    btn.scrollIntoView({behavior: 'auto', block: 'center'});
-                    btn.click();
+                    if(btn) { btn.scrollIntoView({behavior: 'auto', block: 'center'}); btn.click(); }
                 """)
                 return
             except Exception as e:
-                self.log(f"Retry {i+1} failed: {e}")
-                time.sleep(0.5)
-        
-        raise Exception("Failed to click NextButton after retries")
+                if i == max_retries - 1: raise e
+                time.sleep(0.3)
 
-    def wait_for_page_load(self):
-        try:
-            WebDriverWait(self.driver, 15).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
-        except:
-            pass
-    def click_all_js(self, element_ids):
-        """Click multiple elements in a single JS call — for matrix pages."""
-        self.log(f"Batch clicking {len(element_ids)} elements...")
+    def click_all_and_next(self, element_ids):
+        """Click multiple elements AND NextButton in a single JS execution."""
+        self.log(f"Batch clicking {len(element_ids)} elements + Next...")
         ids_js = ','.join(f"'{eid}'" for eid in element_ids)
         self.driver.execute_script(f"""
             var ids = [{ids_js}];
@@ -317,7 +284,21 @@ class SurveyAutomator:
                 var el = document.getElementById(id);
                 if(el) {{ el.scrollIntoView({{behavior: 'auto', block: 'center'}}); el.click(); }}
             }});
+            var btn = document.getElementById('NextButton');
+            if(btn) {{ btn.click(); }}
         """)
+
+    def wait_for_element_gone(self, element_id, timeout=10):
+        """Poll until an element disappears — used to detect page transitions."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                if not self.driver.find_elements(By.ID, element_id):
+                    return True
+            except:
+                return True
+            time.sleep(0.1)
+        return False
 
     def complete_survey_pages(self):
         # NOTE: Exception handling is done in start_survey to capture debug info
@@ -345,104 +326,89 @@ class SurveyAutomator:
                 return False
         except: pass
 
-        self.click_element_js("QR~QID14~1")
-        self.click_next()
+        self.click_and_next("QR~QID14~1")
         self.progress = 50
 
         # Page 3: Highly Satisfied
         self.wait_for_next_page("QR~QID15~4")
-        self.click_element_js("QR~QID15~4")
-        self.click_next()
+        self.click_and_next("QR~QID15~4")
         self.progress = 55
 
         # Page 4: Feedback
         self.wait_for_next_page("QR~QID45")
         try:
-            textarea = self.driver.find_element(By.ID, "QR~QID45")
-            textarea.clear()
-            self.driver.execute_script(
-                "arguments[0].value = 'Great service'; "
-                "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));",
-                textarea
-            )
+            self.driver.execute_script("""
+                var ta = document.getElementById('QR~QID45');
+                if(ta) { ta.value = 'Great service'; ta.dispatchEvent(new Event('input', {bubbles:true})); }
+                var btn = document.getElementById('NextButton');
+                if(btn) { btn.click(); }
+            """)
         except:
-            self.log("Feedback area not found, skipping")
-        self.click_next()
+            self.log("Feedback page error, clicking Next anyway")
+            self.click_next()
         self.progress = 60
 
         # Page 5: Dine-In
         self.wait_for_next_page("QR~QID18~5")
-        self.click_element_js("QR~QID18~5")
-        self.click_next()
+        self.click_and_next("QR~QID18~5")
         self.progress = 65
 
         # Page 6: Front counter
         self.wait_for_next_page("QR~QID19~5")
-        self.click_element_js("QR~QID19~5")
-        self.click_next()
+        self.click_and_next("QR~QID19~5")
         self.progress = 70
 
         # Page 7: Beverage only
         self.wait_for_next_page("QR~QID20~5")
-        self.click_element_js("QR~QID20~5")
-        self.click_next()
+        self.click_and_next("QR~QID20~5")
         self.progress = 72
 
-        # Page 8: Matrix (Highly Satisfied) — batch click all 6 at once
+        # Page 8: Matrix (Highly Satisfied) — batch click all 6 + Next in one JS call
         self.wait_for_next_page("QR~QID23~4~1")
-        self.click_all_js([
+        self.click_all_and_next([
             "QR~QID23~4~1", "QR~QID23~6~1", "QR~QID23~7~1",
             "QR~QID23~8~1", "QR~QID23~10~1", "QR~QID23~11~1"
         ])
-        self.click_next()
         self.progress = 75
 
-        # Page 9: Empty/Next
-        self.wait_for_next_page("NextButton")
+        # Page 9: Empty/Next — wait for Page 8 matrix elements to disappear
+        self.wait_for_element_gone("QR~QID23~4~1")
         self.click_next()
         self.progress = 78
 
         # Page 10: No
         self.wait_for_next_page("QR~QID151~3")
-        self.click_element_js("QR~QID151~3")
-        self.click_next()
+        self.click_and_next("QR~QID151~3")
         self.progress = 80
 
-        # Page 11: Highly Likely x2
+        # Page 11: Highly Likely x2 — click both + Next in one JS call
         self.wait_for_next_page("QR~QID44~1~1")
-        self.click_element_js("QR~QID44~1~1")
-        self.click_element_js("QR~QID44~3~1")
-        self.click_next()
+        self.click_all_and_next(["QR~QID44~1~1", "QR~QID44~3~1"])
         self.progress = 83
 
         # Page 12: No
         self.wait_for_next_page("QR~QID37~2")
-        self.click_element_js("QR~QID37~2")
-        self.click_next()
+        self.click_and_next("QR~QID37~2")
         self.progress = 85
 
         # Page 13: No
         self.wait_for_next_page("QR~QID134~2")
-        self.click_element_js("QR~QID134~2")
-        self.click_next()
+        self.click_and_next("QR~QID134~2")
         self.progress = 87
 
         # Page 14: Yes
         self.wait_for_next_page("QR~QID150~2")
-        self.click_element_js("QR~QID150~2")
-        self.click_next()
+        self.click_and_next("QR~QID150~2")
         self.progress = 90
 
         # Page 15: Something else
         self.wait_for_next_page("QR~QID48~5")
-        self.click_element_js("QR~QID48~5")
-        self.click_next()
+        self.click_and_next("QR~QID48~5")
         self.progress = 93
 
         # Page 16: No
         self.wait_for_next_page("QR~QID68~2")
-        self.click_element_js("QR~QID68~2")
-        self.click_next()
+        self.click_and_next("QR~QID68~2")
         self.progress = 95
 
         return True
