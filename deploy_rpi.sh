@@ -11,7 +11,7 @@ sudo apt update && sudo apt upgrade -y
 
 # 2. Install System Dependencies
 echo "Installing system dependencies..."
-sudo apt install -y python3-pip python3-venv chromium-browser chromium-chromedriver
+sudo apt install -y python3-pip python3-venv chromium-browser chromium-chromedriver lsof
 
 # 3. Create Python Virtual Environment
 echo "Setting up Python environment..."
@@ -20,8 +20,8 @@ source venv/bin/activate
 
 # 4. Install Python Packages
 echo "Installing Python packages..."
-# Note: opencv-python-headless is preferred for server/RPi environments
-pip install flask selenium webdriver-manager
+pip install --upgrade pip
+pip install -r requirements.txt
 
 # 5. Install Ngrok (ARM64)
 echo "Installing Ngrok..."
@@ -34,52 +34,58 @@ else
     echo "Ngrok already installed."
 fi
 
-# 6. Create Start Script
-echo "Creating start script..."
-cat > start_app.sh << EOL
+# 6. Ensure start script is executable
+if [ -f "start_app.sh" ]; then
+    chmod +x start_app.sh
+else
+    echo "Creating start script..."
+    cat > start_app.sh << 'EOL'
 #!/bin/bash
-cd "\$(dirname "\$0")"
+cd "$(dirname "$0")"
 source venv/bin/activate
 export FLASK_APP=app.py
 export FLASK_ENV=production
 
 # Check if port 5001 is in use and kill the process
 PORT=5001
-PID=\$(lsof -t -i:\$PORT)
-if [ -n "\$PID" ]; then
-    echo "Port \$PORT is in use by PID \$PID. Killing it..."
-    kill -9 \$PID
+PID=$(lsof -t -i:$PORT 2>/dev/null)
+if [ -n "$PID" ]; then
+    echo "Port $PORT is in use by PID $PID. Killing it..."
+    kill -9 $PID
     sleep 1
 fi
 
 # Start Flask in background
 python3 app.py &
-FLASK_PID=\$!
+FLASK_PID=$!
 
 # Wait for Flask
-sleep 5
+sleep 3
 
 # Start Ngrok
-echo "Starting Ngrok..."
+echo "Starting Ngrok tunnel on port 5001..."
 ngrok http 5001 > /dev/null &
+NGROK_PID=$!
 
-echo "App running! Access via Ngrok URL."
+echo "App running! Access via your Ngrok public URL."
+echo "Check your Ngrok dashboard (https://dashboard.ngrok.com/endpoints/status) to find the public URL."
 echo "Press Ctrl+C to stop."
 
 # Cleanup function
 cleanup() {
     echo "Stopping app..."
-    kill \$FLASK_PID
-    pkill ngrok
-    exit
+    kill $FLASK_PID 2>/dev/null
+    kill $NGROK_PID 2>/dev/null
+    pkill -f "ngrok http 5001" 2>/dev/null
+    exit 0
 }
 
-trap cleanup SIGINT
+trap cleanup SIGINT SIGTERM
 
-wait \$FLASK_PID
+wait $FLASK_PID
 EOL
-
-chmod +x start_app.sh
+    chmod +x start_app.sh
+fi
 
 echo "Deployment complete!"
 echo "1. Run 'ngrok config add-authtoken YOUR_TOKEN' to authenticate ngrok"
