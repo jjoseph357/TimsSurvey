@@ -20,7 +20,8 @@ FLASK_PID=$!
 # Wait for Flask
 sleep 3
 
-# Start Ngrok
+# Start Ngrok (stop any leftover tunnel first, or ngrok refuses: endpoint already online)
+pkill -f "ngrok http" 2>/dev/null && sleep 1
 echo "Starting Ngrok tunnel on port 5001..."
 ngrok http 5001 > /dev/null &
 NGROK_PID=$!
