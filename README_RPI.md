@@ -43,6 +43,22 @@ The script will:
 **To access the app:**
 Go to your [Ngrok Dashboard > Endpoints](https://dashboard.ngrok.com/endpoints/status) to see the public URL (e.g., `https://random-name.ngrok-free.app`). Open this URL on your phone.
 
+## Running Several Surveys at Once
+
+Type a code, press **Start Survey**, and type the next one right away. Each code gets its own card, and
+up to 10 surveys run in parallel (extra codes wait their turn). Tim Hortons (21 digits) and Dairy Queen
+(15 characters) codes are detected automatically. To change the limit, set `MAX_BROWSERS` before starting,
+e.g. `MAX_BROWSERS=5 ./start_app.sh`. Each browser uses roughly 250-400 MB of RAM.
+
+## Running the Tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+The tests drive headless Chrome against local copies of the survey sites, so no real codes are used.
+
 ## Auto-Start on Boot (Optional)
 
 To make the app start automatically when the Pi turns on:

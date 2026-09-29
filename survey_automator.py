@@ -3,6 +3,8 @@ import time
 import threading
 import logging
 import re
+import tempfile
+import uuid
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -22,11 +24,11 @@ class DriverPool:
     _instance = None
     _lock = threading.Lock()
 
-    def __new__(cls, max_drivers=3):
+    def __new__(cls, max_drivers=None):
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(DriverPool, cls).__new__(cls)
-                cls._instance.max_drivers = max_drivers
+                cls._instance.max_drivers = max_drivers or int(os.environ.get('MAX_BROWSERS', '10'))
                 cls._instance.drivers = []  # List of {'driver': driver, 'busy': bool}
                 cls._instance.pool_lock = threading.Lock()
         return cls._instance
@@ -49,17 +51,23 @@ class DriverPool:
                         except:
                             pass
                         self.drivers.pop(i)
-            
-            # 2. If no idle driver, create new if under limit
-            if len(self.drivers) < self.max_drivers:
-                logger.info(f"Creating new driver ({len(self.drivers) + 1}/{self.max_drivers})")
-                driver = self._create_driver()
-                self.drivers.append({'driver': driver, 'busy': True})
-                return driver
-            
-            # 3. If full, return None (caller should handle busy state)
-            logger.warning("Driver pool exhausted!")
-            return None
+
+            # 2. If no idle driver, reserve a slot if under limit
+            if len(self.drivers) >= self.max_drivers:
+                logger.warning("Driver pool exhausted!")
+                return None
+            slot = {'driver': None, 'busy': True}
+            self.drivers.append(slot)
+            logger.info(f"Creating new driver ({len(self.drivers)}/{self.max_drivers})")
+
+        # Launch Chrome outside the lock so parallel surveys don't start one at a time
+        try:
+            slot['driver'] = self._create_driver()
+            return slot['driver']
+        except Exception:
+            with self.pool_lock:
+                self.drivers.remove(slot)
+            raise
 
     def release_driver(self, driver):
         with self.pool_lock:
@@ -97,7 +105,10 @@ class DriverPool:
         # RPi/Linux specific: Check for system chromedriver
         import platform
         system_os = platform.system()
-        
+
+        if system_os != 'Linux' and os.environ.get('HEADLESS') == '1':
+            options.add_argument('--headless=new')
+
         if system_os == 'Linux':
             options.add_argument('--headless=new') # Optional: Run headless on Pi
             options.add_argument('--no-sandbox')
@@ -166,14 +177,47 @@ class DriverPool:
 def get_driver_pool():
     return DriverPool()
 
+
+
+def save_path(prefix):
+    """Unique temp path, so parallel surveys never overwrite each other's screenshots."""
+    return os.path.join(tempfile.gettempdir(), f"{prefix}_{uuid.uuid4().hex[:12]}.png")
+
+
+# Finds the smallest visible element whose text contains the needle and wraps its content in an
+# inline-block, so a screenshot of the wrapper is tight around the text instead of page-wide.
+WRAP_TEXT_ELEMENT_JS = """
+var needle = arguments[0], best = null;
+document.querySelectorAll('body *').forEach(function(el) {
+    var rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    var text = el.innerText || '';
+    if (text.indexOf(needle) === -1) return;
+    if (!best || text.length < best.innerText.length) best = el;
+});
+if (!best) return null;
+var wrap = document.createElement('span');
+wrap.style.cssText = 'display:inline-block;padding:6px 10px;background:#fff';
+while (best.firstChild) wrap.appendChild(best.firstChild);
+best.appendChild(wrap);
+wrap.scrollIntoView({block: 'center'});
+return wrap;
+"""
+
+
 class SurveyAutomator:
-    def __init__(self):
+    """Shared lifecycle: borrow a browser, fill the survey, capture the validation code."""
+    URL = None
+
+    def __init__(self, base_url=None):
+        self.base_url = base_url or self.URL
         self.driver = None
         self.status = "Idle"
         self.progress = 0
         self.logs = []
         self.result_code = None
         self.result_image_path = None
+        self.code_image_path = None
         self.is_running = False
 
     def log(self, message):
@@ -183,27 +227,225 @@ class SurveyAutomator:
         self.status = message
         logger.info(message)
 
-    def extract_code_from_text(self, text):
-        # Method 1: Regex patterns
-        patterns = [
-            r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{5}\b',
-            r'\b\d{21}\b',
-        ]
-        for pattern in patterns:
-            matches = re.findall(pattern, text)
-            if matches:
-                clean_code = matches[0].replace('-', '').replace(' ', '')
-                if len(clean_code) == 21:
-                    return clean_code
-        
-        # Method 2: Brute Force
-        digits_only = re.sub(r'\D', '', text)
-        match = re.search(r'\d{21}', digits_only)
-        if match:
-            return match.group(0)
+    def fill_survey(self, code):
+        """Site-specific: enter the code and answer every page. Return True once on the final page."""
+        raise NotImplementedError
+
+    def extract_validation_code(self):
+        """Poll for validation code every 200ms, up to 5s."""
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                text = self.driver.find_element(By.TAG_NAME, "body").text
+                match = re.search(r'Validation Code:?\s*(\d+)', text, re.IGNORECASE)
+                if match: return match.group(1)
+                match = re.search(r'\b\d{7}\b', text)
+                if match: return match.group(0)
+            except:
+                pass
+            time.sleep(0.2)
         return None
 
-    # Camera scanning features removed
+    def capture_code_image(self):
+        """Screenshot just the element showing the validation code, so it's readable at a glance."""
+        try:
+            element = self.driver.execute_script(WRAP_TEXT_ELEMENT_JS, self.result_code or 'Validation')
+            if element:
+                path = save_path("code")
+                element.screenshot(path)
+                self.code_image_path = path
+        except Exception as e:
+            self.log(f"Could not crop validation code: {e}")
+
+    def start_survey(self, code, on_success=None):
+        self.is_running = True
+        self.progress = 0
+        self.logs = []
+        self.result_code = None
+        self.result_image_path = None
+        self.code_image_path = None
+        self.log("Opening browser...")
+
+        pool = get_driver_pool()
+        self.driver = pool.get_driver()
+
+        if not self.driver:
+            self.log("System busy: No browsers available")
+            self.is_running = False
+            return
+
+        # Set script timeout for execute_async_script calls
+        self.driver.set_script_timeout(15)
+
+        try:
+            self.log(f"Starting survey for code: {code}")
+            if self.fill_survey(code):
+                self.log("Survey pages completed")
+                self.progress = 98
+
+                self.result_code = self.extract_validation_code()
+                if self.result_code:
+                    self.log(f"Validation Code: {self.result_code}")
+
+                self.capture_code_image()
+                fpath = save_path("result")
+                self.driver.save_screenshot(fpath)
+                self.result_image_path = fpath
+                self.progress = 100
+                self.status = "Completed"
+                if on_success:
+                    try:
+                        on_success()
+                    except Exception as cb_err:
+                        self.log(f"Callback error: {cb_err}")
+            else:
+                self.status = "Failed during pages"
+
+        except Exception as e:
+            self.log(f"Critical Error: {e}")
+
+            # Enhanced Debugging
+            try:
+                if self.driver:
+                    self.log(f"Current URL: {self.driver.current_url}")
+                    self.log(f"Page Title: {self.driver.title}")
+
+                    fpath_img = save_path("error")
+                    self.driver.save_screenshot(fpath_img)
+                    self.result_image_path = fpath_img
+
+                    fpath_html = fpath_img[:-4] + ".html"
+                    with open(fpath_html, "w", encoding='utf-8') as f:
+                        f.write(self.driver.page_source)
+                    self.log(f"Saved debug HTML to {fpath_html}")
+            except Exception as debug_err:
+                self.log(f"Failed to save debug info: {debug_err}")
+            self.status = f"Error: {e}"
+
+        finally:
+            self.is_running = False
+            # CRITICAL: Release driver, don't close it
+            if self.driver:
+                pool.release_driver(self.driver)
+                self.driver = None
+
+
+class TimsAutomator(SurveyAutomator):
+    """telltims.ca — a fixed Qualtrics flow inside an iframe."""
+    URL = "https://www.telltims.ca/"
+
+    def fill_survey(self, code):
+        self.driver.get(self.base_url)
+        self.progress = 10
+
+        # Wait for body
+        WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+        # Iframe check
+        try:
+            iframe = self.driver.find_element(By.TAG_NAME, "iframe")
+            self.driver.switch_to.frame(iframe)
+            self.log("Switched to iframe")
+        except:
+            self.log("No iframe found")
+
+        # Input Code
+        self.log("Entering code...")
+        try:
+            input_field = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, "QR~QID9"))
+            )
+        except:
+            input_field = self.find_input_in_context()
+
+        if not input_field:
+            raise Exception("Input field not found")
+
+        input_field.clear()
+
+        # 1. Fast JS code entry with event dispatch
+        self.log("Entering code via JS...")
+        try:
+            self.driver.execute_script("""
+                var el = arguments[0];
+                var code = arguments[1];
+                el.focus();
+                el.value = code;
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+                el.blur();
+            """, input_field, code)
+        except:
+            # Fallback: char-by-char typing
+            self.log("JS entry failed, falling back to typing...")
+            for char in code:
+                input_field.send_keys(char)
+                time.sleep(0.02)
+            try:
+                self.driver.execute_script("arguments[0].blur();", input_field)
+            except: pass
+
+        # 2. Force Blur (Click Body) - Triggers validation
+        try:
+            self.driver.find_element(By.TAG_NAME, "body").click()
+        except: pass
+
+        time.sleep(0.2) 
+
+        # Retry Loop: Keep hitting Next until we actually verify we moved
+        self.log("Transition Loop: Pressing Next until Page 2 appears...")
+        max_attempts = 5
+        transitioned = False
+
+        for attempt in range(max_attempts):
+            # 1. Click Next
+            try:
+                self.click_next()
+            except: pass 
+
+            # POLL for page load (Checking every 200ms up to 2s)
+            for _ in range(10):
+                time.sleep(0.2)
+                try:
+                    if self.driver.find_elements(By.ID, "QR~QID14~1"):
+                        self.log("Transition Verified: Found Page 2 ID")
+                        transitioned = True
+                        break
+
+                    body_text = self.driver.find_element(By.TAG_NAME, "body").text
+
+                    if "Is your feedback related to" in body_text:
+                        self.log("Transition Verified: Found Page 2 Text")
+                        transitioned = True
+                        break
+                except: pass
+
+            if transitioned:
+                break
+
+            # Check for error messages on Page 1
+            try:
+                body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                if "Error" in body_text or "Invalid" in body_text:
+                    raise Exception("Survey rejected the code (Invalid/Used).")
+            except NameError: pass
+            except Exception as e:
+                if "rejected" in str(e): raise
+
+            self.log(f"Still on Page 1 (Attempt {attempt+1}/{max_attempts})...")
+
+            # Re-do validation trigger (Tab/Blur) to ensure button enables
+            try:
+                input_field.send_keys(Keys.TAB)
+                self.driver.execute_script("arguments[0].blur();", input_field)
+            except: pass
+
+        if not transitioned:
+             raise Exception("Failed to verify transition to Page 2 after multiple attempts")
+
+        self.progress = 40
+
+        return self.complete_survey_pages()
 
     def find_input_in_context(self):
         """Try to find the survey code input field"""
@@ -405,208 +647,131 @@ class SurveyAutomator:
 
         return True
 
-    def extract_validation_code(self):
-        """Poll for validation code every 200ms, up to 5s."""
-        deadline = time.time() + 5
-        while time.time() < deadline:
-            try:
-                text = self.driver.find_element(By.TAG_NAME, "body").text
-                match = re.search(r'Validation Code:?\s*(\d+)', text, re.IGNORECASE)
-                if match: return match.group(1)
-                match = re.search(r'\b\d{7}\b', text)
-                if match: return match.group(0)
-            except:
-                pass
-            time.sleep(0.2)
-        return None
 
-    def start_survey(self, code, on_success=None):
-        self.is_running = True
-        self.progress = 0
-        self.logs = []
-        self.result_code = None
-        self.result_image_path = None
-        
-        pool = get_driver_pool()
-        self.driver = pool.get_driver()
-        
-        if not self.driver:
-            self.log("System busy: No browsers available")
-            self.is_running = False
-            return
+class DQAutomator(SurveyAutomator):
+    """mydqexperience.com — an SMG survey whose pages branch, so each page is read and answered by policy."""
+    URL = "https://www.mydqexperience.com/"
+    COMMENT = ("Great experience overall. The staff were friendly and fast. "
+               "My order was accurate and tasted great. I will definitely be back soon.")
 
-        # Set script timeout for execute_async_script calls
-        self.driver.set_script_timeout(15)
+    # Groups radio inputs by question: {name: {q: question text, opts: [[id, label], ...]}}
+    RADIO_GROUPS_JS = """
+    var groups = {};
+    document.querySelectorAll('input[type=radio]').forEach(function(e) {
+        var td = e.closest('td'), q = '', o = '';
+        if (td) {
+            var ql = document.getElementById(td.getAttribute('aria-labelledby') || '');
+            var ol = document.getElementById(td.getAttribute('aria-describedby') || '');
+            q = ql ? ql.innerText.trim() : '';
+            o = ol ? ol.innerText.trim() : '';
+        }
+        if (!q) { var fs = e.closest('fieldset'); var lg = fs && fs.querySelector('legend'); q = lg ? lg.innerText.trim() : ''; }
+        if (!o) { var lab = document.querySelector('label[for="' + e.id + '"]'); o = lab ? lab.innerText.trim() : ''; }
+        (groups[e.name] = groups[e.name] || {q: q, opts: []}).opts.push([e.id, o]);
+    });
+    return groups;
+    """
 
+    # Last-resort answers for pages the policy left incomplete: tick one box per group, fill blank comments.
+    FILL_EXTRAS_JS = """
+    var comment = arguments[0];
+    document.querySelectorAll('textarea, input[type=text]').forEach(function(t) {
+        if (!t.value && t.getBoundingClientRect().width > 0) t.value = comment;
+    });
+    var seen = {};
+    document.querySelectorAll('input[type=checkbox]').forEach(function(c) {
+        var group = c.closest('fieldset, table, div') || document.body;
+        if (group.querySelector('input[type=checkbox]:checked') || seen[c.name]) return;
+        seen[c.name] = true;
+        var lab = document.querySelector('label[for="' + c.id + '"]');
+        (lab || c).click();
+    });
+    """
+
+    def fill_survey(self, code):
+        d = self.driver
+        d.get(self.base_url)
+        code_input = WebDriverWait(d, 20).until(EC.presence_of_element_located((By.ID, "CN1")))
+        d.execute_script("arguments[0].value = arguments[1];", code_input, code)
+        self.log("Entered code")
+        self.submit_page()
+        self.progress = 10
+
+        if d.find_elements(By.ID, "CN1"):
+            raise Exception("Survey rejected the code (Invalid/Used).")
+
+        retried = False
+        for page in range(1, 80):
+            if d.find_elements(By.CLASS_NAME, "ValCode"):
+                return True
+            has_error = "Error:" in d.find_element(By.TAG_NAME, "body").text
+            if has_error and retried:
+                raise Exception("Survey kept rejecting answers on page " + str(page))
+            self.answer_page(fill_extras=has_error)
+            retried = has_error
+            self.progress = min(95, 10 + page * 4)
+            self.submit_page()
+        raise Exception("Survey never reached the validation code page")
+
+    def answer_page(self, fill_extras):
+        groups = self.driver.execute_script(self.RADIO_GROUPS_JS)
+        for group in groups.values():
+            option_id = choose_answer(group['q'], group['opts'])
+            self.click_option(option_id)
+        if fill_extras:
+            self.driver.execute_script(self.FILL_EXTRAS_JS, self.COMMENT)
+        self.log(f"Answered {len(groups)} question(s)")
+
+    def click_option(self, option_id):
+        # SMG hides the real <input>; only a genuine click on its cell or label selects it.
+        d = self.driver
+        radio = d.find_element(By.ID, option_id)
+        holder = radio.find_element(By.XPATH, "..")
+        if holder.tag_name != "td":
+            labels = d.find_elements(By.CSS_SELECTOR, f'label[for="{option_id}"]')
+            holder = labels[0] if labels else holder
+        holder.click()
+
+    @staticmethod
+    def _is_gone(element):
+        # After navigation Chrome may raise a generic inspector error rather than StaleElementReference.
         try:
-            self.log(f"Starting survey for code: {code}")
-            self.driver.get("https://www.telltims.ca/")
-            self.progress = 10
-            
-            # Wait for body
-            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            element.is_enabled()
+            return False
+        except Exception:
+            return True
 
-            # Iframe check
-            try:
-                iframe = self.driver.find_element(By.TAG_NAME, "iframe")
-                self.driver.switch_to.frame(iframe)
-                self.log("Switched to iframe")
-            except:
-                self.log("No iframe found")
+    def submit_page(self):
+        d = self.driver
+        button = d.find_element(By.ID, "NextButton")
+        button.click()
+        WebDriverWait(d, 20, poll_frequency=0.05).until(lambda drv: self._is_gone(button))
+        WebDriverWait(d, 20, poll_frequency=0.05).until(
+            lambda drv: drv.find_elements(By.ID, "NextButton") or drv.find_elements(By.CLASS_NAME, "ValCode"))
 
-            # Input Code
-            self.log("Entering code...")
-            try:
-                input_field = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "QR~QID9"))
-                )
-            except:
-                input_field = self.find_input_in_context()
-            
-            if not input_field:
-                raise Exception("Input field not found")
 
-            input_field.clear()
-            
-            # 1. Fast JS code entry with event dispatch
-            self.log("Entering code via JS...")
-            try:
-                self.driver.execute_script("""
-                    var el = arguments[0];
-                    var code = arguments[1];
-                    el.focus();
-                    el.value = code;
-                    el.dispatchEvent(new Event('input', {bubbles: true}));
-                    el.dispatchEvent(new Event('change', {bubbles: true}));
-                    el.blur();
-                """, input_field, code)
-            except:
-                # Fallback: char-by-char typing
-                self.log("JS entry failed, falling back to typing...")
-                for char in code:
-                    input_field.send_keys(char)
-                    time.sleep(0.02)
-                try:
-                    self.driver.execute_script("arguments[0].blur();", input_field)
-                except: pass
-            
-            # 2. Force Blur (Click Body) - Triggers validation
-            try:
-                self.driver.find_element(By.TAG_NAME, "body").click()
-            except: pass
-            
-            time.sleep(0.2) 
-            
-            # Retry Loop: Keep hitting Next until we actually verify we moved
-            self.log("Transition Loop: Pressing Next until Page 2 appears...")
-            max_attempts = 5
-            transitioned = False
-            
-            for attempt in range(max_attempts):
-                # 1. Click Next
-                try:
-                    self.click_next()
-                except: pass 
-                
-                # POLL for page load (Checking every 200ms up to 2s)
-                for _ in range(10):
-                    time.sleep(0.2)
-                    try:
-                        if self.driver.find_elements(By.ID, "QR~QID14~1"):
-                            self.log("Transition Verified: Found Page 2 ID")
-                            transitioned = True
-                            break
-                        
-                        body_text = self.driver.find_element(By.TAG_NAME, "body").text
-                        
-                        if "Is your feedback related to" in body_text:
-                            self.log("Transition Verified: Found Page 2 Text")
-                            transitioned = True
-                            break
-                    except: pass
-                
-                if transitioned:
-                    break
-                
-                # Check for error messages on Page 1
-                try:
-                    body_text = self.driver.find_element(By.TAG_NAME, "body").text
-                    if "Error" in body_text or "Invalid" in body_text:
-                        raise Exception("Survey rejected the code (Invalid/Used).")
-                except NameError: pass
-                except Exception as e:
-                    if "rejected" in str(e): raise
-                    
-                self.log(f"Still on Page 1 (Attempt {attempt+1}/{max_attempts})...")
-                
-                # Re-do validation trigger (Tab/Blur) to ensure button enables
-                try:
-                    input_field.send_keys(Keys.TAB)
-                    self.driver.execute_script("arguments[0].blur();", input_field)
-                except: pass
+# Rating labels from best to worst-case fallbacks; the first matching one is chosen.
+POSITIVE_ANSWERS = ['highly satisfied', 'highly likely', 'extremely likely', 'strongly agree',
+                    'excellent', 'very satisfied', 'extremely satisfied']
+# Yes/no questions where "No" is the happy path (and skips follow-up pages).
+ANSWER_NO = re.compile(r'problem|issue|complain|recogni[sz]e|mobile app|contact you', re.IGNORECASE)
 
-            if not transitioned:
-                 raise Exception("Failed to verify transition to Page 2 after multiple attempts")
-            
-            self.progress = 40
 
-            # Run pages
-            if self.complete_survey_pages():
-                self.log("Survey pages completed")
-                self.progress = 98
-                
-                # Validation Code
-                code = self.extract_validation_code()
-                if code:
-                    self.result_code = code
-                    self.log(f"Validation Code: {code}")
-                
-                # Screenshot
-                import tempfile
-                fname = f"result_{int(time.time())}.png"
-                fpath = os.path.join(tempfile.gettempdir(), fname)
-                self.driver.save_screenshot(fpath)
-                self.result_image_path = fpath
-                self.progress = 100
-                self.status = "Completed"
-                if on_success:
-                    try:
-                        on_success()
-                    except Exception as cb_err:
-                        self.log(f"Callback error: {cb_err}")
-            else:
-                self.status = "Failed during pages"
+def choose_answer(question, options):
+    """Pick an option id for one question. `options` is [[id, label], ...] in page order."""
+    labels = [label.strip().lower() for _, label in options]
+    for positive in POSITIVE_ANSWERS:
+        for (option_id, _), label in zip(options, labels):
+            if label.startswith(positive):
+                return option_id
+    if sorted(labels) == ['no', 'yes']:
+        want = 'no' if ANSWER_NO.search(question) else 'yes'
+        return options[labels.index(want)][0]
+    return options[0][0]
 
-        except Exception as e:
-            self.log(f"Critical Error: {e}")
-            self.status = "Error"
-            
-            # Enhanced Debugging
-            try:
-                if self.driver:
-                    self.log(f"Current URL: {self.driver.current_url}")
-                    self.log(f"Page Title: {self.driver.title}")
-                    
-                    import tempfile
-                    # Screenshot
-                    fname_img = f"error_{int(time.time())}.png"
-                    fpath_img = os.path.join(tempfile.gettempdir(), fname_img)
-                    self.driver.save_screenshot(fpath_img)
-                    self.result_image_path = fpath_img 
-                    
-                    # HTML Dump
-                    fname_html = f"error_{int(time.time())}.html"
-                    fpath_html = os.path.join(tempfile.gettempdir(), fname_html)
-                    with open(fpath_html, "w", encoding='utf-8') as f:
-                        f.write(self.driver.page_source)
-                    self.log(f"Saved debug HTML to {fpath_html}")
-            except Exception as debug_err:
-                self.log(f"Failed to save debug info: {debug_err}")
-            
-            
-        finally:
-            self.is_running = False
-            # CRITICAL: Release driver, don't close it
-            if self.driver:
-                pool.release_driver(self.driver)
-                self.driver = None
+
+AUTOMATORS = {'tims': TimsAutomator, 'dq': DQAutomator}
+
+
+def make_automator(site, base_url=None):
+    return AUTOMATORS[site](base_url=base_url)
